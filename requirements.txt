@@ -1,0 +1,7 @@
+mesa>=3.0.0
+numpy
+pyyaml
+solara
+networkx
+matplotlib
+altair

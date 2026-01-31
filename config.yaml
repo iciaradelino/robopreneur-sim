@@ -1,0 +1,98 @@
+# main simualtion configuration file with all the parameters
+
+simulation:
+  seed: 32
+  duration: 500 # in steps
+
+world:
+  size: 100 # 100x100 continuous space
+  boundaries: false # no wrap around, how to do this?
+  charging_station: [50, 50]
+
+humans:
+  human_1: # can we use this as the id?
+    initial_wealth: 2000
+    schedule: false # how do we define the schedule?
+    speed: 2 # units/min
+    services: [BatteryCharging, LabCleaning, ItemTransport, PowerSupply, SystemUpdate, FunctionalityTest]
+    completion_probability: 0.95 # same for all tasks
+
+  human_2:
+    initial_wealth: 2000
+    schedule: false
+    speed: 2 # units/min
+    services: [BatteryCharging, LabCleaning, ItemTransport, PowerSupply, SystemUpdate, FunctionalityTest]
+    completion_probability: 0.95
+
+robots:
+  robot_1: 
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5 # units/min
+    random_walk_interval: 5 # change target every k steps
+    services: [LabCleaning, ItemTransport, SurveillancePatrol, ComponentRestock]
+    completion_probability: 0.8
+
+  robot_2: 
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5 # units/min
+    random_walk_interval: 5 # change target every k steps
+    services: [LabCleaning, ItemTransport, SurveillancePatrol, ComponentRestock]
+    completion_probability: 0.8
+
+battery: # same for all robots
+  recharge_rate: 0.167 # units/min maybe out this in minutes? #CHECK THIS
+  drain_rate: 0.2 # units/min
+  recharge_trigger: 30 # battery threshold to 
+  min_accept_task: 35 # percentage
+
+tasks:
+  arrival_rate: 6 # tasks/hour
+  proximity_threshold: 0.5 # units to consider at location
+
+assignemnt_policy: random
+
+pricing_model: fixed
+
+services:
+  BatteryCharging:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  PowerSupply:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  ComponentRestock:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  SystemUpdate:
+    category: maintenance
+    performed_by: # agent ids here TODO
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  FunctionalityTest:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+    
+  LabCleaning:
+    category: cleaning
+    work_time: {mean: 20, sd: 8, min: 6}
+    reward: {median: 140, sigma_g: 0.35}
+    
+  ItemTransport:
+    category: transport
+    work_time: {mean: 8, sd: 3, min: 3}
+    reward: {median: 130, sigma_g: 0.35}
+    
+  SurveillancePatrol:
+    category: security
+    work_time: {mean: 30, sd: 10, min: 10}
+    reward: {median: 180, sigma_g: 0.35}
