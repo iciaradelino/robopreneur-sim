@@ -2,7 +2,6 @@ import mesa
 import numpy as np
 from services import Service
 from utils import sample_reward, sample_work_time
-from model import RobopreneurModel
 from battery import generate_recharge_task, update_battery
 from movement import check_if_at_location
 from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
