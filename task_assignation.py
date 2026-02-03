@@ -1,6 +1,6 @@
 # the logic to assign tasks to agents
 
-from load_config import assignemnt_policy_config, battery_config, tasks_config, services_config, world_config, humans_config
+from load_config import assignment_policy_config, battery_config, tasks_config, services_config, world_config, humans_config
 from agents import HumanAgent, RobotAgent
 from tasks import Task
 from utils import sample_reward, sample_work_time
@@ -21,6 +21,9 @@ def generate_tasks(model):
     available_services = list(available_services)
     
     for _ in range(num_tasks):
+        # randomly select an agent to request this task
+        assigner_agent = model.random.choice(list(model.agents))
+        
         # randomly select a service type
         service_name = model.random.choice(available_services)
         service_config = services_config[service_name]
@@ -37,7 +40,8 @@ def generate_tasks(model):
             task_id=model.task_counter,
             name=service_name,
             category=service_config['category'],
-            location=location
+            location=location,
+            assigner_id=assigner_agent.agent_id
         )
         
         # add to queue
@@ -98,6 +102,7 @@ def _assign_task_to_agent(model, task, agent):
     # update agent properties
     agent.status = "exec"
     agent.curent_task = task
+    agent.target_location = task.location
     
     # update task properties with agent-specific values
     task.reward = agent_service.reward
@@ -139,31 +144,3 @@ def assign_tasks(model):
         
         iterations += 1
 
-# check if this is needed
-# every step update the status of the tasks performed by all exec agents
-def update_task_status(model):
-    """
-    check task completions and update task status
-    tasks can only fail if an agent attempted them but didn't complete
-    """
-    for agent in model.agents:
-        if agent.status == "exec" and agent.curent_task is not None:
-            task = agent.curent_task
-            
-            # decrement remaining time
-            task.remaining_time -= 1
-            
-            # check if task is complete
-            if task.remaining_time <= 0:
-                # check completion probability
-                if model.random.random() < agent.completion_probability:
-                    # task completed successfully
-                    task.status = "completed"
-                    agent.wealth += task.reward # maybe add a function to add the reward to the agent's wealth
-                else:
-                    # task failed
-                    task.status = "failed"
-                
-                # agent is now idle and no longer has a task
-                agent.status = "idle"
-                agent.curent_task = None

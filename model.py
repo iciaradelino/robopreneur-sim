@@ -5,10 +5,10 @@ from agents import HumanAgent, RobotAgent
 from tasks import Task
 from services import Service
 from metrics import compute_gini
-from task_assignation import generate_tasks, update_task_status, assign_tasks
+from task_assignation import generate_tasks, assign_tasks
 
 # load the config from the config.yaml file
-from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignemnt_policy_config, pricing_model_config, services_config
+from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
 
 class RobopreneurModel(mesa.Model):
     def __init__(self):
@@ -40,12 +40,16 @@ class RobopreneurModel(mesa.Model):
             human = HumanAgent(self, human_id, human_config)
             pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
             self.space.place_agent(human, pos)
+            human.location = pos
+            human.target_location = pos
 
         for robot_id, robot_config in robots_config.items():
             # create the robot agent, place it in the space, gets all the services appened at init
             robot = RobotAgent(self, robot_id, robot_config)
             pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
             self.space.place_agent(robot, pos)
+            robot.location = pos
+            robot.target_location = pos
 
     def step(self):
         '''

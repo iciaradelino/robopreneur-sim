@@ -1,9 +1,10 @@
 import mesa
+import numpy as np
 from services import Service
 from utils import sample_reward, sample_work_time
 from model import RobopreneurModel
-
-from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignemnt_policy_config, pricing_model_config, services_config
+from movement import check_if_at_location
+from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
 # no backup values for the config, if it doesn't load give an error
 
 class HumanAgent(mesa.Agent):
@@ -40,30 +41,55 @@ class HumanAgent(mesa.Agent):
             self.services.append(service)
 
     def step(self):
-        # movement
-        if self.location != self.target_location:
-            self.move()
-
         # task execution
         if self.status == "exec" and self.curent_task is not None:
             self.execute_task()
 
+        # movement (move() checks if already at target)
+        self.move()
+
 
     def move(self):
-        # implement the moving logic here
-        # TODO: implement move logic
-        pass
+        # get current position from mesa space
+        current_pos = np.array(self.model.space.get_pos(self))
+        target_pos = np.array(self.target_location)
+
+        if check_if_at_location(self, self.target_location):
+            return
+        
+        # calculate direction vector and distance
+        direction = target_pos - current_pos
+        distance = np.linalg.norm(direction)
+        
+        # move at most self.speed units toward target
+        if distance <= self.speed:
+            # can reach target this step
+            new_pos = tuple(target_pos)
+        else:
+            # normalize so we move exactly self.speed units (direction has length distance, not 1)
+            direction_normalized = direction / distance
+            new_pos = tuple(current_pos + direction_normalized * self.speed)
+        
+        # update position in mesa space
+        self.model.space.move_agent(self, new_pos)
+        self.location = new_pos
 
     def execute_task(self):
         task = self.curent_task
-
-        # decrement remaining time
+        
+        # check if at task location
+        if not check_if_at_location(self, task.location):
+            # still traveling to task location
+            self.target_location = task.location
+            return
+        
+        # at task location, do work
         task.remaining_time -= 1
         
         # check if task is complete
         if task.remaining_time <= 0:
             # check completion probability
-            if RobopreneurModel.random.random() < self.completion_probability:
+            if self.model.random.random() < self.completion_probability:
                 # task completed successfully
                 task.status = "completed"
                 self.wealth += task.reward
@@ -123,26 +149,51 @@ class RobotAgent(mesa.Agent):
         if self.status == "exec" and self.curent_task is not None:
             self.execute_task()
 
-        # movement
-        if self.location != self.target_location:
-            self.move()
+        # checks if already at target
+        self.move()
 
     def move(self):
-        # move towards the target location
-        # TODO: implement move logic
-        pass
+        # if already at target (within proximity threshold), do nothing
+        if check_if_at_location(self, self.target_location):
+            return
+        
+        # get current position from mesa space
+        current_pos = np.array(self.model.space.get_pos(self))
+        target_pos = np.array(self.target_location)
+        
+        # calculate direction vector and distance
+        direction = target_pos - current_pos
+        distance = np.linalg.norm(direction)
+        
+        # if within reach moves to exact target
+        if distance <= self.speed:
+            new_pos = tuple(target_pos)
+        # if not within reach moves towards target at speed
+        else:
+            direction_normalized = direction / distance
+            new_pos = tuple(current_pos + direction_normalized * self.speed)
+        
+        # update position in mesa space
+        self.model.space.move_agent(self, new_pos)
+        self.location = new_pos
 
 
     def execute_task(self):
         task = self.curent_task
-
-        # decrement remaining time
+        
+        # check if at task location
+        if not check_if_at_location(self, task.location):
+            # still traveling to task location
+            self.target_location = task.location
+            return
+        
+        # at task location, do work
         task.remaining_time -= 1
         
         # check if task is complete
         if task.remaining_time <= 0:
             # check completion probability
-            if RobopreneurModel.random.random() < self.completion_probability:
+            if self.model.random.random() < self.completion_probability:
                 # task completed successfully
                 task.status = "completed"
                 self.wealth += task.reward
@@ -155,14 +206,19 @@ class RobotAgent(mesa.Agent):
             self.curent_task = None
 
 
-    # check if this is right 
     def recharge(self):
-        charging_station = world_config['charging_station']
-        if self.location != charging_station:
-            self.move()
+        # check if at charging station
+        station = tuple(world_config['charging_station'])
+        at_station = check_if_at_location(self, station)
+
+        if not at_station:
+            # traveling to charging station
+            self.status = "busy"
+            self.target_location = station
         else:
-            # gradually increment the battery levels 
+            # at station, charging
+            self.status = "busy"
             self.battery += battery_config['recharge_rate']
-            if self.battery > battery_config['max_battery']:
-                self.battery = battery_config['max_battery']
-            
+            if self.battery >= 100:
+                self.battery = 100
+                self.status = "idle"

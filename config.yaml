@@ -51,7 +51,7 @@ tasks:
   arrival_rate: 6 # tasks/hour
   proximity_threshold: 0.5 # units to consider at location
 
-assignemnt_policy: random
+assignment_policy: random
 
 pricing_model: fixed
 
