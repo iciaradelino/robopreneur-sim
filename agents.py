@@ -3,6 +3,7 @@ import numpy as np
 from services import Service
 from utils import sample_reward, sample_work_time
 from model import RobopreneurModel
+from battery import generate_recharge_task, update_battery
 from movement import check_if_at_location
 from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
 # no backup values for the config, if it doesn't load give an error
@@ -88,14 +89,19 @@ class HumanAgent(mesa.Agent):
         
         # check if task is complete
         if task.remaining_time <= 0:
-            # check completion probability
-            if self.model.random.random() < self.completion_probability:
-                # task completed successfully
+            # battery charging tasks never fail (critical service)
+            if task.name == "BatteryCharging":
                 task.status = "completed"
                 self.wealth += task.reward
             else:
-                # task failed
-                task.status = "failed"
+                # check completion probability for other tasks
+                if self.model.random.random() < self.completion_probability:
+                    # task completed successfully
+                    task.status = "completed"
+                    self.wealth += task.reward
+                else:
+                    # task failed
+                    task.status = "failed"
 
             # agent is now idle and no longer has a task
             self.status = "idle"
@@ -114,7 +120,9 @@ class RobotAgent(mesa.Agent):
         self.completion_probability = agent_config.get('completion_probability')
         self.random_walk_interval = agent_config.get('random_walk_interval')
         self.location = (0, 0) # this should be initialized randomly 
-        self.target_location = (0, 0) # this should be optional 
+        self.target_location = (0, 0) # this should be optional
+        self.awaiting_recharge = False # tracks if robot is waiting for recharge
+        self.recharge_task = None # reference to the current recharge task 
         
         # extract the services it offers from the config and create instances
         self.services = []
@@ -137,19 +145,14 @@ class RobotAgent(mesa.Agent):
             self.services.append(service)
 
     def step(self):
-        # battery management
-        drain_rate = battery_config['drain_rate']
-        self.battery -= drain_rate
-        if self.battery < 0:
-            self.battery = 0
-        if self.battery <= battery_config['recharge_trigger']:
-            self.recharge()
-
-        # task execution
+        # update battery
+        update_battery(self)
+        
+        # task execution (only if not waiting for recharge)
         if self.status == "exec" and self.curent_task is not None:
             self.execute_task()
 
-        # checks if already at target
+        # movement (checks if already at target)
         self.move()
 
     def move(self):
@@ -204,21 +207,3 @@ class RobotAgent(mesa.Agent):
             # agent is now idle and no longer has a task
             self.status = "idle"
             self.curent_task = None
-
-
-    def recharge(self):
-        # check if at charging station
-        station = tuple(world_config['charging_station'])
-        at_station = check_if_at_location(self, station)
-
-        if not at_station:
-            # traveling to charging station
-            self.status = "busy"
-            self.target_location = station
-        else:
-            # at station, charging
-            self.status = "busy"
-            self.battery += battery_config['recharge_rate']
-            if self.battery >= 100:
-                self.battery = 100
-                self.status = "idle"

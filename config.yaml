@@ -44,7 +44,7 @@ robots:
 battery: # same for all robots
   recharge_rate: 0.167 # units/min maybe out this in minutes? #CHECK THIS
   drain_rate: 0.2 # units/min
-  recharge_trigger: 30 # battery threshold to 
+  recharge_trigger: 30 # battery threshold to ask for a recharge
   min_accept_task: 35 # percentage
 
 tasks:

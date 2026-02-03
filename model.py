@@ -4,7 +4,7 @@ import numpy as np
 from agents import HumanAgent, RobotAgent
 from tasks import Task
 from services import Service
-from metrics import compute_gini
+from metrics import compute_gini, compute_avg_battery, compute_human_wealth, compute_robot_wealth, compute_idle_ratio, compute_exec_ratio, compute_busy_ratio
 from task_assignation import generate_tasks, assign_tasks
 
 # load the config from the config.yaml file
@@ -23,8 +23,16 @@ class RobopreneurModel(mesa.Model):
         )
 
         self.datacollector = mesa.DataCollector(
-            model_reporters={"Gini": compute_gini},
-            agent_reporters={"Wealth": "wealth"}
+            model_reporters={
+                "Gini": compute_gini,
+                "Avg_Battery": compute_avg_battery,
+                "Human_Wealth": compute_human_wealth,
+                "Robot_Wealth": compute_robot_wealth,
+                "Idle_Ratio": compute_idle_ratio,
+                "Exec_Ratio": compute_exec_ratio,
+                "Busy_Ratio": compute_busy_ratio
+            },
+            agent_reporters={"Wealth": "wealth", "Battery": lambda a: getattr(a, 'battery', None)}
         )
 
         self.task_queue = [] # task queue for unassigned tasks

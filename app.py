@@ -23,13 +23,16 @@ model = RobopreneurModel()
 # create space visualization component
 space_component = make_space_component(agent_portrayal)
 
-# create plot component for gini coefficient
-plot_component = make_plot_component("Gini")
+# create plot components for metrics
+gini_plot = make_plot_component("Gini")
+battery_plot = make_plot_component("Avg_Battery")
+wealth_plot = make_plot_component(["Human_Wealth", "Robot_Wealth"])
+allocation_plot = make_plot_component(["Idle_Ratio", "Exec_Ratio", "Busy_Ratio"])
 
 # create the solara visualization
 page = SolaraViz(
     model,  # pass the instance, not the class
-    components=[space_component, plot_component],
+    components=[space_component, gini_plot, battery_plot, wealth_plot, allocation_plot],
     name="Robopreneur Simulation"
 )
 
