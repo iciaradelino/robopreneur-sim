@@ -25,14 +25,15 @@ space_component = make_space_component(agent_portrayal)
 
 # create plot components for metrics
 gini_plot = make_plot_component("Gini")
-battery_plot = make_plot_component("Avg_Battery")
-wealth_plot = make_plot_component(["Human_Wealth", "Robot_Wealth"])
-allocation_plot = make_plot_component(["Idle_Ratio", "Exec_Ratio", "Busy_Ratio"])
+tasks_completed_plot = make_plot_component("Tasks_Completed")
+system_wealth_plot = make_plot_component("System_Wealth")
+queue_size_plot = make_plot_component("Queue_Size")
+critical_battery_plot = make_plot_component("Critical_Battery")
 
 # create the solara visualization
 page = SolaraViz(
     model,  # pass the instance, not the class
-    components=[space_component, gini_plot, battery_plot, wealth_plot, allocation_plot],
+    components=[space_component, gini_plot, tasks_completed_plot, system_wealth_plot, queue_size_plot, critical_battery_plot],
     name="Robopreneur Simulation"
 )
 

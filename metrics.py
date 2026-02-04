@@ -16,61 +16,33 @@ def compute_gini(model):
     return gini
 
 
-def compute_avg_battery(model):
+def compute_total_tasks_completed(model):
     """
-    compute the average battery level across all robot agents.
+    compute the cumulative number of tasks completed during the simulation.
+    """
+    return model.task_counter
+
+
+def compute_total_system_wealth(model):
+    """
+    compute the total wealth across all agents in the system.
+    """
+    return sum(agent.wealth for agent in model.agents)
+
+
+def compute_task_queue_size(model):
+    """
+    compute the current number of unassigned tasks in the queue.
+    """
+    return len(model.task_queue)
+
+
+def compute_critical_battery_rate(model):
+    """
+    compute the percentage of robots with critically low battery (<20%).
     """
     robots = [agent for agent in model.agents if hasattr(agent, 'battery')]
     if not robots:
         return 0
-    return sum(robot.battery for robot in robots) / len(robots)
-
-
-def compute_human_wealth(model):
-    """
-    compute the average wealth of human agents.
-    """
-    humans = [agent for agent in model.agents if not hasattr(agent, 'battery')]
-    if not humans:
-        return 0
-    return sum(human.wealth for human in humans) / len(humans)
-
-
-def compute_robot_wealth(model):
-    """
-    compute the average wealth of robot agents.
-    """
-    robots = [agent for agent in model.agents if hasattr(agent, 'battery')]
-    if not robots:
-        return 0
-    return sum(robot.wealth for robot in robots) / len(robots)
-
-
-def compute_idle_ratio(model):
-    """
-    compute the ratio of agents currently idle.
-    """
-    if not model.agents:
-        return 0
-    idle_count = sum(1 for agent in model.agents if agent.status == "idle")
-    return idle_count / len(model.agents)
-
-
-def compute_exec_ratio(model):
-    """
-    compute the ratio of agents currently executing tasks.
-    """
-    if not model.agents:
-        return 0
-    exec_count = sum(1 for agent in model.agents if agent.status == "exec")
-    return exec_count / len(model.agents)
-
-
-def compute_busy_ratio(model):
-    """
-    compute the ratio of agents currently busy (e.g., recharging).
-    """
-    if not model.agents:
-        return 0
-    busy_count = sum(1 for agent in model.agents if agent.status == "busy")
-    return busy_count / len(model.agents)
+    critical_count = sum(1 for robot in robots if robot.battery < 20)
+    return critical_count / len(robots)

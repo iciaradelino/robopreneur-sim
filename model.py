@@ -4,7 +4,7 @@ import numpy as np
 from agents import HumanAgent, RobotAgent
 from tasks import Task
 from services import Service
-from metrics import compute_gini, compute_avg_battery, compute_human_wealth, compute_robot_wealth, compute_idle_ratio, compute_exec_ratio, compute_busy_ratio
+from metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
 from task_assignation import generate_tasks, assign_tasks
 
 # load the config from the config.yaml file
@@ -25,12 +25,10 @@ class RobopreneurModel(mesa.Model):
         self.datacollector = mesa.DataCollector(
             model_reporters={
                 "Gini": compute_gini,
-                "Avg_Battery": compute_avg_battery,
-                "Human_Wealth": compute_human_wealth,
-                "Robot_Wealth": compute_robot_wealth,
-                "Idle_Ratio": compute_idle_ratio,
-                "Exec_Ratio": compute_exec_ratio,
-                "Busy_Ratio": compute_busy_ratio
+                "Tasks_Completed": compute_total_tasks_completed,
+                "System_Wealth": compute_total_system_wealth,
+                "Queue_Size": compute_task_queue_size,
+                "Critical_Battery": compute_critical_battery_rate
             },
             agent_reporters={"Wealth": "wealth", "Battery": lambda a: getattr(a, 'battery', None)}
         )
@@ -43,21 +41,31 @@ class RobopreneurModel(mesa.Model):
         self.datacollector.collect(self)
 
     def initialize_agents(self):
-        for human_id, human_config in humans_config.items():
-            # create the human agent, place it in the space, gets all the services appened at init
-            human = HumanAgent(self, human_id, human_config)
-            pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
-            self.space.place_agent(human, pos)
-            human.location = pos
-            human.target_location = pos
+        # create num agents for each human type
+        for human_type, human_config in humans_config.items():
+            num_agents = human_config.get('num', 1)
+            for i in range(num_agents):
+                # create unique agent id for each instance
+                agent_id = f"{human_type}_{i}"
+                # create the human agent, place it in the space, gets all the services appened at init
+                human = HumanAgent(self, agent_id, human_config)
+                pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
+                self.space.place_agent(human, pos)
+                human.location = pos
+                human.target_location = pos
 
-        for robot_id, robot_config in robots_config.items():
-            # create the robot agent, place it in the space, gets all the services appened at init
-            robot = RobotAgent(self, robot_id, robot_config)
-            pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
-            self.space.place_agent(robot, pos)
-            robot.location = pos
-            robot.target_location = pos
+        # create num agents for each robot type
+        for robot_type, robot_config in robots_config.items():
+            num_agents = robot_config.get('num', 1)
+            for i in range(num_agents):
+                # create unique agent id for each instance
+                agent_id = f"{robot_type}_{i}"
+                # create the robot agent, place it in the space, gets all the services appened at init
+                robot = RobotAgent(self, agent_id, robot_config)
+                pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
+                self.space.place_agent(robot, pos)
+                robot.location = pos
+                robot.target_location = pos
 
     def step(self):
         '''

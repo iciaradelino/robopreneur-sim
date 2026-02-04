@@ -9,8 +9,13 @@ world:
   boundaries: false # no wrap around, how to do this?
   charging_station: [50, 50]
 
+
+# add num of each type of agent 
+# total numbner, cuantos de cada uno 
+
 humans:
   human_1: # can we use this as the id?
+    num: 1
     initial_wealth: 2000
     schedule: false # how do we define the schedule?
     speed: 2 # units/min
@@ -18,6 +23,7 @@ humans:
     completion_probability: 0.95 # same for all tasks
 
   human_2:
+    num: 1
     initial_wealth: 2000
     schedule: false
     speed: 2 # units/min
@@ -26,6 +32,7 @@ humans:
 
 robots:
   robot_1: 
+    num: 1
     initial_wealth: 2000
     initial_battery: 100
     speed: 1.5 # units/min
@@ -34,6 +41,7 @@ robots:
     completion_probability: 0.8
 
   robot_2: 
+    num: 1
     initial_wealth: 2000
     initial_battery: 100
     speed: 1.5 # units/min

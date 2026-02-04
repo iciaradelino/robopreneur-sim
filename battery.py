@@ -26,7 +26,6 @@ def generate_recharge_task(model, robot):
     # store reference to this task in the robot
     robot.recharge_task = task
 
-
 def update_battery(robot):
     # check if robot is currently charging
     if robot.awaiting_recharge and robot.recharge_task is not None:
