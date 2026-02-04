@@ -51,7 +51,7 @@ class HumanAgent(mesa.Agent):
 
     def move(self):
         # get current position from mesa space
-        current_pos = np.array(self.model.space.get_pos(self))
+        current_pos = np.array(self.pos)
         target_pos = np.array(self.target_location)
 
         if check_if_at_location(self, self.target_location):
@@ -160,7 +160,7 @@ class RobotAgent(mesa.Agent):
             return
         
         # get current position from mesa space
-        current_pos = np.array(self.model.space.get_pos(self))
+        current_pos = np.array(self.pos)
         target_pos = np.array(self.target_location)
         
         # calculate direction vector and distance
