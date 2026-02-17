@@ -4,8 +4,6 @@ from services import Service
 from utils import sample_reward, sample_work_time
 from battery import generate_recharge_task, update_battery
 from movement import check_if_at_location
-from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
-# no backup values for the config, if it doesn't load give an error
 
 class HumanAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
@@ -25,6 +23,7 @@ class HumanAgent(mesa.Agent):
         service_names = agent_config.get('services')  # list like ['BatteryCharging', 'LabCleaning', ...]
         self.services = []
         for service_name in service_names:
+            services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
             service_config = services_config[service_name]
             
             # sample specific values from distributions
@@ -88,6 +87,10 @@ class HumanAgent(mesa.Agent):
         
         # check if task is complete
         if task.remaining_time <= 0:
+            # lifecycle: record completion step (for experiment analysis)
+            task.completed_step = self.model.steps
+            if hasattr(self.model, 'completed_tasks'):
+                self.model.completed_tasks.append(task)
             # battery charging tasks never fail (critical service)
             if task.name == "BatteryCharging":
                 task.status = "completed"
@@ -128,6 +131,7 @@ class RobotAgent(mesa.Agent):
         service_names = agent_config.get('services')  # list like ['LabCleaning', 'ItemTransport', ...]
         
         for service_name in service_names:
+            services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
             service_config = services_config[service_name]
 
             # sample specific values from distributions
@@ -194,6 +198,10 @@ class RobotAgent(mesa.Agent):
         
         # check if task is complete
         if task.remaining_time <= 0:
+            # lifecycle: record completion step (for experiment analysis)
+            task.completed_step = self.model.steps
+            if hasattr(self.model, 'completed_tasks'):
+                self.model.completed_tasks.append(task)
             # check completion probability
             if self.model.random.random() < self.completion_probability:
                 # task completed successfully

@@ -14,3 +14,7 @@ class Task:
         self.assignee_id = None  # who is performing the task
         self.remaining_time = time if time is not None else 0
         self.status = "pending"  # pending, in_progress, completed, failed
+        # lifecycle tracking (for experiment analysis)
+        self.created_step = None
+        self.assigned_step = None
+        self.completed_step = None

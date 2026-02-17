@@ -1,7 +1,6 @@
 # battery management logic
 
 from tasks import Task
-from load_config import world_config, battery_config
 
 def generate_recharge_task(model, robot):
     """
@@ -9,6 +8,7 @@ def generate_recharge_task(model, robot):
     the robot requests help from a human to plug it in at the charging station
     """
     # create task with charging station location
+    world_config = model.world_config if hasattr(model, 'world_config') else model.config['world']
     station_location = tuple(world_config['charging_station'])
     
     task = Task(
@@ -27,6 +27,10 @@ def generate_recharge_task(model, robot):
     robot.recharge_task = task
 
 def update_battery(robot):
+    # get config from model
+    battery_config = robot.model.battery_config if hasattr(robot.model, 'battery_config') else robot.model.config['battery']
+    world_config = robot.model.world_config if hasattr(robot.model, 'world_config') else robot.model.config['world']
+    
     # check if robot is currently charging
     if robot.awaiting_recharge and robot.recharge_task is not None:
         # check if a human has accepted the task and is working on it

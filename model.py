@@ -14,6 +14,15 @@ class RobopreneurModel(mesa.Model):
     def __init__(self):
         super().__init__()
 
+        # store config references for compatibility with dynamic loading
+        self.sim_config = sim_config
+        self.world_config = world_config
+        self.humans_config = humans_config
+        self.robots_config = robots_config
+        self.battery_config = battery_config
+        self.tasks_config = tasks_config
+        self.services_config = services_config
+
         self.random = np.random.default_rng(sim_config['seed'])
 
         self.space = mesa.space.ContinuousSpace(

@@ -1,12 +1,15 @@
 # the logic to assign tasks to agents
 
-from load_config import assignment_policy_config, battery_config, tasks_config, services_config, world_config, humans_config
 from agents import HumanAgent, RobotAgent
 from tasks import Task
 from utils import sample_reward, sample_work_time
 
 # generate tasks based on arrival rate and add them to the task queue using poisson 
 def generate_tasks(model):
+    # get config from model
+    tasks_config = model.tasks_config if hasattr(model, 'tasks_config') else model.config['tasks']
+    services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
+    world_config = model.world_config if hasattr(model, 'world_config') else model.config['world']
 
     arrival_rate = tasks_config['arrival_rate']  # tasks per hour
     steps_per_hour = 60  # 1 step = 1 minute
@@ -44,7 +47,8 @@ def generate_tasks(model):
             assigner_id=assigner_agent.agent_id
         )
         
-        # add to queue
+        # lifecycle: record creation step
+        task.created_step = model.steps
         model.task_queue.append(task)
         model.task_counter += 1
 
@@ -57,6 +61,9 @@ def _get_eligible_agents(model, task):
     2. agent has a service matching task.name
     3. if robot: battery >= min_accept_task
     """
+    # get config from model
+    battery_config = model.battery_config if hasattr(model, 'battery_config') else model.config['battery']
+    
     eligible_agents = []
     
     for agent in model.agents:
@@ -111,6 +118,8 @@ def _assign_task_to_agent(model, task, agent):
     task.status = "in_progress"
     task.assignee_id = agent.agent_id
     task.remaining_time = task.time
+    # lifecycle: record assignment step
+    task.assigned_step = model.steps
 
 # assign all tasks in the queue to available agents
 def assign_tasks(model):

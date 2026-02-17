@@ -1,7 +1,10 @@
 mesa>=3.0.0
 numpy
+pandas
 pyyaml
 solara
 networkx
 matplotlib
+seaborn
 altair
+tabulate
