@@ -33,12 +33,13 @@ def update_battery(robot):
     
     # check if robot is currently charging
     if robot.awaiting_recharge and robot.recharge_task is not None:
-        # check if a human has accepted the task and is working on it
-        if robot.recharge_task.status == "in_progress" and robot.recharge_task.assignee_id is not None:
-            # human has accepted and is "plugging in" - start charging
+        # check if a human has accepted and started the charging task
+        # once charging starts (task assigned), robot continues until 100% regardless of task status
+        if robot.recharge_task.assignee_id is not None:
+            # charging has been initiated by human - robot charges continuously
             robot.battery += battery_config['recharge_rate']
             
-            # cap battery at 100
+            # once battery reaches 100%, stop charging and return to idle
             if robot.battery >= 100:
                 robot.battery = 100
                 robot.status = "idle"
