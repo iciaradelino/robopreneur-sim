@@ -4,6 +4,7 @@ from services import Service
 from utils import sample_reward, sample_work_time
 from battery import generate_recharge_task, update_battery
 from movement import check_if_at_location
+from economy import transfer_reward
 
 class HumanAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
@@ -94,15 +95,13 @@ class HumanAgent(mesa.Agent):
             # battery charging tasks never fail (critical service)
             if task.name == "BatteryCharging":
                 task.status = "completed"
-                self.wealth += task.reward
+                transfer_reward(self.model, task, self)
             else:
                 # check completion probability for other tasks
                 if self.model.random.random() < self.completion_probability:
-                    # task completed successfully
                     task.status = "completed"
-                    self.wealth += task.reward
+                    transfer_reward(self.model, task, self)
                 else:
-                    # task failed
                     task.status = "failed"
 
             # agent is now idle and no longer has a task
@@ -221,11 +220,9 @@ class RobotAgent(mesa.Agent):
                 self.model.completed_tasks.append(task)
             # check completion probability
             if self.model.random.random() < self.completion_probability:
-                # task completed successfully
                 task.status = "completed"
-                self.wealth += task.reward
+                transfer_reward(self.model, task, self)
             else:
-                # task failed
                 task.status = "failed"
             
             # agent is now idle and no longer has a task
