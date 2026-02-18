@@ -8,11 +8,10 @@ def compute_gini(model):
     if not agent_wealths or sum(agent_wealths) == 0:
         return 0
     agent_wealths.sort()
+    n = len(agent_wealths)
     total_wealth = sum(agent_wealths)
-    gini = 0
-    for i, wealth in enumerate(agent_wealths):
-        gini += (i + 1) * wealth
-    gini = 1 - 2 * gini / (total_wealth * len(agent_wealths))
+    weighted_sum = sum((i + 1) * w for i, w in enumerate(agent_wealths))
+    gini = (2 * weighted_sum) / (n * total_wealth) - (n + 1) / n
     return gini
 
 

@@ -20,7 +20,8 @@ def generate_tasks(model):
     available_services = set()
     for agent in model.agents:
         for service in agent.services:
-            available_services.add(service.name)
+            if service.name != "BatteryCharging":
+                available_services.add(service.name)
     available_services = list(available_services)
     
     for _ in range(num_tasks):

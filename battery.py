@@ -1,6 +1,7 @@
 # battery management logic
 
 from tasks import Task
+from movement import check_if_at_location
 
 def generate_recharge_task(model, robot):
     """
@@ -27,40 +28,35 @@ def generate_recharge_task(model, robot):
     robot.recharge_task = task
 
 def update_battery(robot):
-    # get config from model
     battery_config = robot.model.battery_config if hasattr(robot.model, 'battery_config') else robot.model.config['battery']
     world_config = robot.model.world_config if hasattr(robot.model, 'world_config') else robot.model.config['world']
-    
-    # check if robot is currently charging
-    if robot.awaiting_recharge and robot.recharge_task is not None:
-        # check if a human has accepted and started the charging task
-        # once charging starts (task assigned), robot continues until 100% regardless of task status
-        if robot.recharge_task.assignee_id is not None:
-            # charging has been initiated by human - robot charges continuously
-            robot.battery += battery_config['recharge_rate']
-            
-            # once battery reaches 100%, stop charging and return to idle
+    station = tuple(world_config['charging_station'])
+
+    if robot.awaiting_recharge:
+        # latch: check once per step if the human has arrived and plugged in
+        if not robot.is_charging and robot.recharge_task is not None:
+            assignee_id = robot.recharge_task.assignee_id
+            human = next((a for a in robot.model.agents if a.agent_id == assignee_id), None) if assignee_id else None
+            if human is not None and check_if_at_location(robot, station) and check_if_at_location(human, station):
+                robot.is_charging = True
+
+        if robot.is_charging:
+            # charge continuously until full - human can leave, robot stays plugged in
+            robot.battery = min(robot.battery + battery_config['recharge_rate'], 100)
             if robot.battery >= 100:
-                robot.battery = 100
                 robot.status = "idle"
                 robot.awaiting_recharge = False
+                robot.is_charging = False
                 robot.recharge_task = None
         else:
-            # still waiting for human to accept task, battery continues draining
-            robot.battery -= battery_config['drain_rate']
-            if robot.battery < 0:
-                robot.battery = 0
-    else:
-        # normal battery drain when not charging
-        drain_rate = battery_config['drain_rate']
-        robot.battery -= drain_rate
+            # still traveling to station or waiting for human - battery keeps draining
+            robot.battery = max(robot.battery - battery_config['drain_rate'], 0)
 
-        if robot.battery < 0:
-            robot.battery = 0
-        
-        # check if battery hits recharge trigger
-        if robot.battery <= battery_config['recharge_trigger'] and not robot.awaiting_recharge:
+    else:
+        # normal operation - drain and trigger recharge request if threshold is hit
+        robot.battery = max(robot.battery - battery_config['drain_rate'], 0)
+        if robot.battery <= battery_config['recharge_trigger']:
             generate_recharge_task(robot.model, robot)
             robot.awaiting_recharge = True
             robot.status = "busy"
-            robot.target_location = tuple(world_config['charging_station'])
+            robot.target_location = station

@@ -124,7 +124,8 @@ class RobotAgent(mesa.Agent):
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional
         self.awaiting_recharge = False # tracks if robot is waiting for recharge
-        self.recharge_task = None # reference to the current recharge task 
+        self.is_charging = False      # latches true once human and robot are both at the station
+        self.recharge_task = None     # reference to the current recharge task 
         
         # extract the services it offers from the config and create instances
         self.services = []
@@ -147,6 +148,11 @@ class RobotAgent(mesa.Agent):
             )
             self.services.append(service)
 
+        # initialize target location randomly so idle robots start walking immediately
+        world_size = self.model.world_config['size']
+        self.target_location = (self.model.random.random() * world_size, self.model.random.random() * world_size)
+        self.walk_counter = 0  # counts steps since last random target pick
+
     def step(self):
         # update battery
         update_battery(self)
@@ -154,6 +160,17 @@ class RobotAgent(mesa.Agent):
         # task execution (only if not waiting for recharge)
         if self.status == "exec" and self.curent_task is not None:
             self.execute_task()
+
+        # random walk: when idle, pick a new target every random_walk_interval steps
+        if self.status == "idle":
+            self.walk_counter += 1
+            if self.walk_counter >= self.random_walk_interval:
+                world_size = self.model.world_config['size']
+                self.target_location = (
+                    self.model.random.random() * world_size,
+                    self.model.random.random() * world_size
+                )
+                self.walk_counter = 0
 
         # movement (checks if already at target)
         self.move()
