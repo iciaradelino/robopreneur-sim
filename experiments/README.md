@@ -59,6 +59,12 @@ Then generate plots separately:
 python scripts/plot_results.py <path_to_results_directory>
 ```
 
+## Remove all output for an experiment
+
+```bash
+rm experiments/exp-01-battery/scenario-a/*.csv experiments/exp-01-battery/scenario-a/*.png experiments/exp-01-battery/scenario-b/*.csv experiments/exp-01-battery/scenario-b/*.png experiments/exp-01-battery/scenario-c/*.csv experiments/exp-01-battery/scenario-c/*.png
+```
+
 ## Output Files
 
 After running an experiment, each scenario folder will contain:
