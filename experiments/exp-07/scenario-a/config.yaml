@@ -1,0 +1,100 @@
+simulation:
+  seed: 42
+  duration: 10000
+
+world:
+  size: 100
+  boundaries: false
+  charging_station: [50, 50]
+
+humans:
+  human_1:
+    num: 200
+    initial_wealth: 2000
+    schedule: false
+    speed: 2
+    services: [BatteryCharging, LabCleaning, ItemTransport, PowerSupply, SystemUpdate, FunctionalityTest]
+    completion_probability: 0.95
+
+  human_2:
+    num: 200
+    initial_wealth: 2000
+    schedule: false
+    speed: 2
+    services: [BatteryCharging, LabCleaning, ItemTransport, PowerSupply, SystemUpdate, FunctionalityTest]
+    completion_probability: 0.95
+
+robots:
+  robot_1: 
+    num: 200
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5
+    random_walk_interval: 5
+    services: [LabCleaning, ItemTransport, SurveillancePatrol, ComponentRestock]
+    completion_probability: 0.8
+
+  robot_2: 
+    num: 200
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5
+    random_walk_interval: 5
+    services: [LabCleaning, ItemTransport, SurveillancePatrol, ComponentRestock]
+    completion_probability: 0.8
+
+battery:
+  recharge_rate: 0.167
+  drain_rate: 0.2
+  recharge_trigger: 50  # VARIABLE: conservative, early charging
+  min_accept_task: 35
+
+tasks:
+  arrival_rate: 8
+  proximity_threshold: 0.5
+
+assignment_policy: random
+
+pricing_model: fixed
+
+services:
+  BatteryCharging:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  PowerSupply:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  ComponentRestock:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  SystemUpdate:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+
+  FunctionalityTest:
+    category: maintenance
+    work_time: {mean: 10, sd: 0, min: 10}
+    reward: {median: 120, sigma_g: 0}
+    
+  LabCleaning:
+    category: cleaning
+    work_time: {mean: 20, sd: 8, min: 6} # esto cmabia en base al agente 
+    reward: {median: 140, sigma_g: 0.35}
+
+    
+  ItemTransport:
+    category: transport
+    work_time: {mean: 8, sd: 3, min: 3}
+    reward: {median: 130, sigma_g: 0.35}
+    
+  SurveillancePatrol:
+    category: security
+    work_time: {mean: 30, sd: 10, min: 10}
+    reward: {median: 180, sigma_g: 0.35}

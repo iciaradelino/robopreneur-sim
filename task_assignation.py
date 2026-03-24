@@ -1,11 +1,12 @@
 # the logic to assign tasks to agents
 
-from agents import HumanAgent, RobotAgent
+from agents import RobotAgent
 from tasks import Task
-from utils import sample_reward, sample_work_time
+from utils import build_execution_details
 
-# generate tasks based on arrival rate and add them to the task queue using poisson 
 def generate_tasks(model):
+    """generate tasks based on arrival rate and add them to the task queue using poisson"""
+
     # get config from model
     tasks_config = model.tasks_config if hasattr(model, 'tasks_config') else model.config['tasks']
     services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
@@ -32,14 +33,13 @@ def generate_tasks(model):
         service_name = model.random.choice(available_services)
         service_config = services_config[service_name]
         
-        # generate random location in world space
+        # generate fallback location in world space (legacy services without phases)
         location = (
             model.random.random() * world_config['size'],
             model.random.random() * world_config['size']
         )
         
-        # create task without reward, time, or completion probability
-        # these will be set when the task is assigned to an agent
+        # create task without reward, time, or completion probability (these will be set when the task is assigned to an agent)
         task = Task(
             task_id=model.task_counter,
             name=service_name,
@@ -47,6 +47,20 @@ def generate_tasks(model):
             location=location,
             assigner_id=assigner_agent.agent_id
         )
+
+        # add execution details from service config if available
+        # maybe these paramters could be added to the Task init to make this more clean 
+        execution_details = build_execution_details(service_config, model)
+        if execution_details is not None:
+            task.execution_details = execution_details
+            task.resolved_waypoints = execution_details["resolved_waypoints"]
+            task.phase_index = execution_details["phase_index"]
+            task.phase_remaining_time = execution_details["phase_remaining_time"]
+            # compatibility: keep task.location as first waypoint for current movement code
+            if task.resolved_waypoints:
+                task.location = task.resolved_waypoints[0]["point"]
+                task.time = execution_details["total_duration"]
+                task.remaining_time = task.time
         
         # lifecycle: record creation step
         task.created_step = model.steps
@@ -109,16 +123,28 @@ def _assign_task_to_agent(model, task, agent):
     
     # update agent properties
     agent.status = "exec"
-    agent.curent_task = task
-    agent.target_location = task.location
+    agent.current_task = task
+
+    # update agent target location using waypoints, otherwise use task location
+    if task.resolved_waypoints:
+        agent.target_location = task.resolved_waypoints[task.phase_index]["point"]
+    else:
+        agent.target_location = task.location
     
-    # update task properties with agent-specific values
+    # update reward (we should explore more complex reward systems)
     task.reward = agent_service.reward
-    task.time = agent_service.time
+
+    # update total task duration
+    if task.execution_details is not None:
+        task.time = task.execution_details["total_duration"]
+    else:
+        task.time = agent_service.time
+
+    # update other agent properties
     task.prob_completion = agent.completion_probability
     task.status = "in_progress"
     task.assignee_id = agent.agent_id
-    task.remaining_time = task.time
+    task.remaining_time = task.time if task.time is not None else 0
     # lifecycle: record assignment step
     task.assigned_step = model.steps
 

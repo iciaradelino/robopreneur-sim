@@ -2,9 +2,99 @@ import mesa
 import numpy as np
 from services import Service
 from utils import sample_reward, sample_work_time
-from battery import generate_recharge_task, update_battery
+from battery import update_battery
 from movement import check_if_at_location
 from economy import transfer_reward
+
+# helper function to avoid code duplication
+def _finish_task(agent, task, success):
+    """finalize task lifecycle, release agent and transfer reward"""
+
+    # record completion step
+    task.completed_step = agent.model.steps
+    # add to completed tasks list
+    agent.model.completed_tasks.append(task)
+    # update task status
+    task.status = "completed" if success else "failed"
+    # transfer reward if task is successful
+    if success:
+        transfer_reward(agent.model, task, agent)
+    # release agent
+    agent.status = "idle"
+    agent.current_task = None
+
+def _execute_phase_task(agent, task):
+    """phase-based execution: travel -> dwell -> fail check -> next phase"""
+
+    # if it has no phase data, don't execute
+    if not task.resolved_waypoints:
+        return False
+
+    # guard for edge cases where task is already completed
+    if task.phase_index >= len(task.resolved_waypoints):
+        _finish_task(agent, task, True)
+        return True
+
+    # get current phase and location of that phase  
+    phase = task.resolved_waypoints[task.phase_index]
+    phase_point = phase["point"]
+
+    # check if agent is at the location of that current phase, if not move there
+    if not check_if_at_location(agent, phase_point):
+        agent.target_location = phase_point
+        return True
+
+    # decrement phase remaining time
+    if task.phase_remaining_time > 0:
+        task.phase_remaining_time -= 1
+        task.remaining_time = max(task.remaining_time - 1, 0)
+
+    # check if phase is completed
+    if task.phase_remaining_time > 0:
+        return True
+
+    # check if phase failed after the phase has been completed TO CHANGE
+    fail_cfg = phase.get("fail", {"model": "per_phase", "p": 0.0})
+    fail_probability = fail_cfg.get("p", 0.0)
+    # no need to hardcode battery charing, we can just specifiy 0 probability of failure in service descritpion 
+    if task.name != "BatteryCharging" and agent.model.random.random() < fail_probability:
+        _finish_task(agent, task, False)
+        return True
+
+    # increment phase index to move to the next phase
+    task.phase_index += 1
+
+    # check if all phases are completed after the increment 
+    if task.phase_index >= len(task.resolved_waypoints):
+        _finish_task(agent, task, True)
+        return True
+
+    # get next phase
+    next_phase = task.resolved_waypoints[task.phase_index]
+    # update phase remaining time
+    task.phase_remaining_time = next_phase.get("duration", 0)
+    # update agent target location
+    agent.target_location = next_phase["point"]
+    # return True to continue execution
+    return True
+
+# keep for now but change in the future 
+def _execute_legacy_task(agent, task):
+    """legacy single-location + remaining_time execution"""
+    if not check_if_at_location(agent, task.location):
+        agent.target_location = task.location
+        return
+
+    task.remaining_time -= 1
+    if task.remaining_time > 0:
+        return
+
+    if task.name == "BatteryCharging":
+        _finish_task(agent, task, True)
+        return
+
+    success = agent.model.random.random() < agent.completion_probability
+    _finish_task(agent, task, success)
 
 class HumanAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
@@ -12,7 +102,7 @@ class HumanAgent(mesa.Agent):
         self.agent_id = agent_id
         self.wealth = agent_config.get('initial_wealth') 
         self.status = "idle"
-        self.curent_task = None
+        self.current_task = None
         self.speed = agent_config.get('speed')
         self.completion_probability = agent_config.get('completion_probability')
         self.schedule = agent_config.get('schedule', False)
@@ -29,7 +119,9 @@ class HumanAgent(mesa.Agent):
             
             # sample specific values from distributions
             reward_value = sample_reward(service_config['reward'], model.random)
-            time_value = sample_work_time(service_config['work_time'], model.random)
+            # phase-based services may not define legacy work_time
+            work_time_cfg = service_config.get('work_time')
+            time_value = sample_work_time(work_time_cfg, model.random) if work_time_cfg is not None else None
             
             service = Service(
                 id=service_name,
@@ -42,7 +134,7 @@ class HumanAgent(mesa.Agent):
 
     def step(self):
         # task execution
-        if self.status == "exec" and self.curent_task is not None:
+        if self.status == "exec" and self.current_task is not None:
             self.execute_task()
 
         # movement (move() checks if already at target)
@@ -75,38 +167,11 @@ class HumanAgent(mesa.Agent):
         self.location = new_pos
 
     def execute_task(self):
-        task = self.curent_task
-        
-        # check if at task location
-        if not check_if_at_location(self, task.location):
-            # still traveling to task location
-            self.target_location = task.location
-            return
-        
-        # at task location, do work
-        task.remaining_time -= 1
-        
-        # check if task is complete
-        if task.remaining_time <= 0:
-            # lifecycle: record completion step (for experiment analysis)
-            task.completed_step = self.model.steps
-            if hasattr(self.model, 'completed_tasks'):
-                self.model.completed_tasks.append(task)
-            # battery charging tasks never fail (critical service)
-            if task.name == "BatteryCharging":
-                task.status = "completed"
-                transfer_reward(self.model, task, self)
-            else:
-                # check completion probability for other tasks
-                if self.model.random.random() < self.completion_probability:
-                    task.status = "completed"
-                    transfer_reward(self.model, task, self)
-                else:
-                    task.status = "failed"
-
-            # agent is now idle and no longer has a task
-            self.status = "idle"
-            self.curent_task = None
+        task = self.current_task
+        if task.execution_details is not None:
+            if _execute_phase_task(self, task):
+                return
+        _execute_legacy_task(self, task)
 
 
 class RobotAgent(mesa.Agent):
@@ -115,7 +180,7 @@ class RobotAgent(mesa.Agent):
         self.agent_id = agent_id
         self.wealth = agent_config.get('initial_wealth')
         self.status = "idle"
-        self.curent_task = None
+        self.current_task = None
         self.battery = agent_config.get('initial_battery')
         self.speed = agent_config.get('speed', 1.5)
         self.completion_probability = agent_config.get('completion_probability')
@@ -136,7 +201,9 @@ class RobotAgent(mesa.Agent):
 
             # sample specific values from distributions
             reward_value = sample_reward(service_config['reward'], model.random)
-            time_value = sample_work_time(service_config['work_time'], model.random)
+            # phase-based services may not define legacy work_time
+            work_time_cfg = service_config.get('work_time')
+            time_value = sample_work_time(work_time_cfg, model.random) if work_time_cfg is not None else None
             
             service = Service(
                 id=service_name,
@@ -157,7 +224,7 @@ class RobotAgent(mesa.Agent):
         update_battery(self)
         
         # task execution (only if not waiting for recharge)
-        if self.status == "exec" and self.curent_task is not None:
+        if self.status == "exec" and self.current_task is not None:
             self.execute_task()
 
         # random walk: when idle, pick a new target every random_walk_interval steps
@@ -201,30 +268,8 @@ class RobotAgent(mesa.Agent):
 
 
     def execute_task(self):
-        task = self.curent_task
-        
-        # check if at task location
-        if not check_if_at_location(self, task.location):
-            # still traveling to task location
-            self.target_location = task.location
-            return
-        
-        # at task location, do work
-        task.remaining_time -= 1
-        
-        # check if task is complete
-        if task.remaining_time <= 0:
-            # lifecycle: record completion step (for experiment analysis)
-            task.completed_step = self.model.steps
-            if hasattr(self.model, 'completed_tasks'):
-                self.model.completed_tasks.append(task)
-            # check completion probability
-            if self.model.random.random() < self.completion_probability:
-                task.status = "completed"
-                transfer_reward(self.model, task, self)
-            else:
-                task.status = "failed"
-            
-            # agent is now idle and no longer has a task
-            self.status = "idle"
-            self.curent_task = None
+        task = self.current_task
+        if task.execution_details is not None:
+            if _execute_phase_task(self, task):
+                return
+        _execute_legacy_task(self, task)

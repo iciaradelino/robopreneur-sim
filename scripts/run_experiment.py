@@ -140,11 +140,16 @@ def run_simulation(config_path):
     print(f"  saved: {output_dir / 'agent_data.csv'}")
 
     # save task lifecycle data (for task status graph)
-    if hasattr(model, 'completed_tasks') and model.completed_tasks:
+    if model.completed_tasks:
         print("saving task lifecycle data...")
         rows = []
         for t in model.completed_tasks:
             if t.assigned_step is not None and t.completed_step is not None:
+                total_phases = len(t.resolved_waypoints) if getattr(t, "resolved_waypoints", None) else 0
+                failed_phase_id = None
+                if t.status == "failed" and getattr(t, "resolved_waypoints", None):
+                    phase_idx = min(max(getattr(t, "phase_index", 0), 0), len(t.resolved_waypoints) - 1)
+                    failed_phase_id = t.resolved_waypoints[phase_idx].get("id")
                 rows.append({
                     'task_id': t.id,
                     'created_step': t.created_step,
@@ -153,6 +158,9 @@ def run_simulation(config_path):
                     'status': t.status,
                     'time_unassigned': t.assigned_step - t.created_step if t.created_step is not None else None,
                     'time_in_progress': t.completed_step - t.assigned_step,
+                    'total_phases': total_phases,
+                    'phases_completed': getattr(t, "phase_index", 0),
+                    'failed_phase_id': failed_phase_id,
                 })
         if rows:
             task_df = pd.DataFrame(rows)

@@ -9,26 +9,33 @@ world:
   boundaries: false # no wrap around, how to do this?
   charging_station: [50, 50]
 
-
-# add num of each type of agent 
-# total numbner, cuantos de cada uno 
-
 humans:
-  human_1: # can we use this as the id?
+  human_1:
     num: 1
-    initial_wealth: 2000
-    schedule: false # how do we define the schedule?
+    initial_wealth: 2000 # IEC
+    schedule: false # not implemented yet
     speed: 2 # units/min
-    services: [BatteryCharging, LabCleaning, ItemTransport, PowerSupply, SystemUpdate, FunctionalityTest]
-    completion_probability: 0.95 # same for all tasks
+    services: 
+      - BatteryCharging: { skill: 0.95}
+      - LabCleaning: { skill: 0.95 }
+      - ItemTransport: { skill: 0.95 }
+      - PowerSupply: { skill: 0.95 }
+      - SystemUpdate: { skill: 0.95 }
+      - FunctionalityTest: { skill: 0.95 }
+
 
   human_2:
     num: 1
-    initial_wealth: 2000
-    schedule: false
+    initial_wealth: 2000 # IEC
+    schedule: false # not implemented yet
     speed: 2 # units/min
-    services: [BatteryCharging, LabCleaning, ItemTransport, PowerSupply, SystemUpdate, FunctionalityTest]
-    completion_probability: 0.95
+    services: 
+      - BatteryCharging: { skill: 0.95}
+      - LabCleaning: { skill: 0.95 }
+      - ItemTransport: { skill: 0.95 }
+      - PowerSupply: { skill: 0.95 }
+      - SystemUpdate: { skill: 0.95 }
+      - FunctionalityTest: { skill: 0.95 }
 
 robots:
   robot_1: 
@@ -37,8 +44,11 @@ robots:
     initial_battery: 100
     speed: 1.5 # units/min
     random_walk_interval: 5 # change target every k steps
-    services: [LabCleaning, ItemTransport, SurveillancePatrol, ComponentRestock]
-    completion_probability: 0.8
+    services: 
+      - LabCleaning: { skill: 0.95 }
+      - ItemTransport: { skill: 0.95 }
+      - SurveillancePatrol: { skill: 0.95 }
+      - ComponentRestock: { skill: 0.95 }
 
   robot_2: 
     num: 1
@@ -46,11 +56,14 @@ robots:
     initial_battery: 100
     speed: 1.5 # units/min
     random_walk_interval: 5 # change target every k steps
-    services: [LabCleaning, ItemTransport, SurveillancePatrol, ComponentRestock]
-    completion_probability: 0.8
+    services: 
+      - LabCleaning: { skill: 0.95 }
+      - ItemTransport: { skill: 0.95 }
+      - SurveillancePatrol: { skill: 0.95 }
+      - ComponentRestock: { skill: 0.95 }
 
 battery: # same for all robots
-  recharge_rate: 0.167 # units/min maybe out this in minutes? #CHECK THIS
+  recharge_rate: 0.167 # units/min maybe out this in minutes?
   drain_rate: 0.2 # units/min
   recharge_trigger: 30 # battery threshold to ask for a recharge
   min_accept_task: 35 # percentage
@@ -66,41 +79,101 @@ pricing_model: fixed
 services:
   BatteryCharging:
     category: maintenance
-    work_time: {mean: 10, sd: 0, min: 10}
     reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: station
+          point: { type: charging_station }
+          duration: {mean: 10, sd: 0, min: 10} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0
 
   PowerSupply:
     category: maintenance
-    work_time: {mean: 10, sd: 0, min: 10}
     reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0
 
   ComponentRestock:
     category: maintenance
-    work_time: {mean: 10, sd: 0, min: 10}
     reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0
 
   SystemUpdate:
     category: maintenance
     performed_by: # agent ids here TODO
-    work_time: {mean: 10, sd: 0, min: 10}
     reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0
 
   FunctionalityTest:
     category: maintenance
-    work_time: {mean: 10, sd: 0, min: 10}
     reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0
     
   LabCleaning:
     category: cleaning
-    work_time: {mean: 20, sd: 8, min: 6}
     reward: {median: 140, sigma_g: 0.35}
+    phases:
+      waypoints:
+        - id: area
+          point: { type: random_in_world }
+          duration: {mean: 20, sd: 8, min: 6} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0
     
   ItemTransport:
     category: transport
-    work_time: {mean: 8, sd: 3, min: 3}
     reward: {median: 130, sigma_g: 0.35}
+    phases:
+      waypoints:
+        - id: pickup
+          point: { type: random_in_world }
+          duration: 10 # in steps
+          fail: 0.08 # probability of failure
+        - id: dropoff
+          point: { type: random_in_world }
+          duration: 10
+          fail: 0.01
+      in_order: true
+      repeat: 0
     
   SurveillancePatrol:
     category: security
-    work_time: {mean: 30, sd: 10, min: 10}
     reward: {median: 180, sigma_g: 0.35}
+    phases:
+      waypoints:
+        - id: patrol_1
+          point: { type: random_in_world }
+          duration: {mean: 30, sd: 10, min: 10} # in steps
+          fail: 0.0
+      in_order: true
+      repeat: 0

@@ -2,23 +2,45 @@
 
 from tasks import Task
 from movement import check_if_at_location
+from utils import build_execution_details
 
 def generate_recharge_task(model, robot):
     """
     creates a recharge task for a robot and adds it to the task queue
     the robot requests help from a human to plug it in at the charging station
     """
-    # create task with charging station location
+    # load station location from world config
     world_config = model.world_config if hasattr(model, 'world_config') else model.config['world']
     station_location = tuple(world_config['charging_station'])
+
+    # load battery charging service config from services config
+    services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
+    battery_service_config = services_config["BatteryCharging"]
     
+    # create the task
     task = Task(
         task_id=model.task_counter,
         name="BatteryCharging",
-        category="maintenance",
+        category=battery_service_config["category"],
         location=station_location,
         assigner_id=robot.agent_id  # robot is requesting the service
     )
+
+    # add execution details to the task
+    # this code is duplicate in task_assignation.py, we should create helper in utils.py
+    execution_details = build_execution_details(battery_service_config, model)
+    if execution_details is not None:
+        task.execution_details = execution_details
+        task.resolved_waypoints = execution_details["resolved_waypoints"]
+        task.phase_index = execution_details["phase_index"]
+        task.phase_remaining_time = execution_details["phase_remaining_time"]
+        if task.resolved_waypoints:
+            task.location = task.resolved_waypoints[0]["point"]
+            task.time = execution_details["total_duration"]
+            task.remaining_time = task.time
+
+    # lifecycle: record creation step
+    task.created_step = model.steps
     
     # add to model's task queue
     model.task_queue.append(task)
@@ -27,11 +49,17 @@ def generate_recharge_task(model, robot):
     # store reference to this task in the robot
     robot.recharge_task = task
 
+# complicated logic on this fucntion, double check 
 def update_battery(robot):
     battery_config = robot.model.battery_config if hasattr(robot.model, 'battery_config') else robot.model.config['battery']
     world_config = robot.model.world_config if hasattr(robot.model, 'world_config') else robot.model.config['world']
     station = tuple(world_config['charging_station'])
 
+    # if the robot has a recharge task, use the station location from the task
+    if robot.recharge_task is not None and robot.recharge_task.resolved_waypoints:
+        station = robot.recharge_task.resolved_waypoints[0]["point"]
+
+    # 
     if robot.awaiting_recharge:
         # latch: check once per step if the human has arrived and plugged in
         if not robot.is_charging and robot.recharge_task is not None:

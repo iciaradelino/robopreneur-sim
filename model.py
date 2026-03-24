@@ -22,7 +22,7 @@ class RobopreneurModel(mesa.Model):
         self.battery_config = battery_config
         self.tasks_config = tasks_config
         self.services_config = services_config
-
+        self.completed_tasks = []
         self.random = np.random.default_rng(sim_config['seed'])
 
         self.space = mesa.space.ContinuousSpace(
