@@ -1,0 +1,276 @@
+flowchart TD
+
+  %% ── colour palette ──────────────────────────────────────────────
+  classDef init    fill:#1e3a5f,stroke:#3b82f6,color:#bfdbfe
+  classDef loop    fill:#1a2e1a,stroke:#22c55e,color:#bbf7d0
+  classDef taskgen fill:#2d1f4e,stroke:#a855f7,color:#e9d5ff
+  classDef human   fill:#1c2e3f,stroke:#38bdf8,color:#bae6fd
+  classDef robot   fill:#3f2c1c,stroke:#fb923c,color:#fed7aa
+  classDef battery fill:#3d2020,stroke:#ef4444,color:#fecaca
+  classDef exec    fill:#1e2d2d,stroke:#2dd4bf,color:#ccfbf1
+  classDef assign  fill:#2a2a1e,stroke:#eab308,color:#fef9c3
+  classDef economy fill:#1f2e1f,stroke:#4ade80,color:#dcfce7
+  classDef metrics fill:#252525,stroke:#94a3b8,color:#e2e8f0
+  classDef decision fill:#1a1a2e,stroke:#818cf8,color:#c7d2fe
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 1 · INITIALIZATION
+  %% ═══════════════════════════════════════════════════════════════
+  subgraph INIT["🔧  initialization  —  model.py"]
+    direction TB
+    I1([load config.yaml]):::init
+    I2[create ContinuousSpace\n100×100 units]:::init
+    I3[spawn HumanAgents\nper type × num]:::init
+    I4[spawn RobotAgents\nper type × num]:::init
+    I5[sample service rewards\nlognormal — sigma_g]:::init
+    I6[place agents at\nrandom positions]:::init
+    I7[collect initial metrics]:::init
+
+    I1 --> I2
+    I2 --> I3
+    I2 --> I4
+    I3 --> I5
+    I4 --> I5
+    I5 --> I6
+    I6 --> I7
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 2 · MAIN STEP LOOP
+  %% ═══════════════════════════════════════════════════════════════
+  I7 --> ML_START
+
+  subgraph STEPLOOP["🔄  main step loop  —  model.step"]
+    direction TB
+    ML_START([runner calls model.step]):::loop
+    ML0[mesa auto-increments self.steps]:::loop
+    ML1[generate_tasks]:::loop
+    ML2[agents.do step]:::loop
+    ML3[assign_tasks]:::loop
+    ML4[collect metrics]:::loop
+    ML5{steps ≥ duration?}:::decision
+    ML_END([simulation ends\nmodel.running = false]):::loop
+
+    ML_START --> ML0
+    ML0 --> ML1
+    ML1 --> ML2
+    ML2 --> ML3
+    ML3 --> ML4
+    ML4 --> ML5
+    ML5 -->|no — runner loops back| ML_START
+    ML5 -->|yes| ML_END
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 3 · TASK GENERATION
+  %% ═══════════════════════════════════════════════════════════════
+  ML1 -.->|calls| TG_START
+
+  subgraph TASKGEN["📋  generate_tasks  —  task_assignation.py"]
+    direction TB
+    TG_START([generate_tasks called]):::taskgen
+    TG1[sample num_tasks\nPoisson  λ = arrival_rate ÷ 60]:::taskgen
+    TG2[pick random assigner agent]:::taskgen
+    TG3[pick random service type\nexcl. BatteryCharging]:::taskgen
+    TG4[build_execution_details\nresolve waypoints & sample durations]:::taskgen
+    TG5[create Task object\nstatus = pending]:::taskgen
+    TG6[append to task_queue]:::taskgen
+
+    TG_START --> TG1
+    TG1 --> TG2
+    TG2 --> TG3
+    TG3 --> TG4
+    TG4 --> TG5
+    TG5 --> TG6
+    TG6 -->|repeat per task| TG2
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 4 · HUMAN AGENT STEP
+  %% ═══════════════════════════════════════════════════════════════
+  ML2 -.->|each human| HA_START
+
+  subgraph HUMANSTEP["🧑  HumanAgent.step  —  agents.py"]
+    direction TB
+    HA_START([human.step]):::human
+    HA1{status == exec?}:::decision
+    HA2[execute_task]:::human
+    HA3[move called\ntarget == current pos\ncheck_if_at_location returns true\nno movement]:::human
+    HA4[move toward task waypoint\nat speed units/step]:::human
+
+    HA_START --> HA1
+    HA1 -->|yes — exec| HA2
+    HA2 --> HA4
+    HA1 -->|no — idle\ntarget_location never updated| HA3
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 5 · ROBOT AGENT STEP
+  %% ═══════════════════════════════════════════════════════════════
+  ML2 -.->|each robot| RA_START
+
+  subgraph ROBOTSTEP["🤖  RobotAgent.step  —  agents.py"]
+    direction TB
+    RA_START([robot.step]):::robot
+    RA1[update_battery]:::robot
+    RA2{status == exec?}:::decision
+    RA3[execute_task]:::robot
+    RA4{status == idle?}:::decision
+    RA5[random walk\npick new target every K steps]:::robot
+    RA6[move toward target_location\nat speed units/step]:::robot
+
+    RA_START --> RA1
+    RA1 --> RA2
+    RA2 -->|yes| RA3
+    RA3 --> RA4
+    RA2 -->|no| RA4
+    RA4 -->|yes| RA5
+    RA5 --> RA6
+    RA4 -->|no — busy/exec| RA6
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 6 · BATTERY MANAGEMENT
+  %% ═══════════════════════════════════════════════════════════════
+  RA1 -.->|calls| BAT_START
+
+  subgraph BATTERY["🔋  update_battery  —  battery.py"]
+    direction TB
+    BAT_START([update_battery called]):::battery
+    BAT1{awaiting_recharge?}:::decision
+    BAT2[drain battery\n− drain_rate per step]:::battery
+    BAT3{battery ≤ recharge_trigger?}:::decision
+    BAT4[generate BatteryCharging task\nadd to task_queue]:::battery
+    BAT5[robot.status = busy\nawaiting_recharge = true\ntarget = charging_station]:::battery
+    BAT6{is_charging?}:::decision
+    BAT7[drain battery while\ntraveling / waiting]:::battery
+    BAT8{robot AND human\nboth at station?}:::decision
+    BAT9[latch is_charging = true]:::battery
+    BAT10[charge battery\n+ recharge_rate per step]:::battery
+    BAT11{battery ≥ 100 ?}:::decision
+    BAT12[status = idle\nawaiting_recharge = false\nis_charging = false]:::battery
+
+    BAT_START --> BAT1
+    BAT1 -->|no — normal| BAT2
+    BAT2 --> BAT3
+    BAT3 -->|no| BAT_OK([continue]):::battery
+    BAT3 -->|yes — threshold hit| BAT4
+    BAT4 --> BAT5
+    BAT1 -->|yes| BAT6
+    BAT6 -->|no — check if ready| BAT8
+    BAT8 -->|yes — latch| BAT9
+    BAT9 --> BAT10
+    BAT8 -->|no — still traveling or waiting| BAT7
+    BAT7 --> BAT_OK
+    BAT6 -->|yes — already charging| BAT10
+    BAT10 --> BAT11
+    BAT11 -->|no| BAT_OK
+    BAT11 -->|yes — full| BAT12
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 7 · TASK EXECUTION  (shared by human and robot)
+  %% ═══════════════════════════════════════════════════════════════
+  HA2 -.->|calls| TE_START
+  RA3 -.->|calls| TE_START
+
+  subgraph TASKEXEC["⚙️  _execute_phase_task  —  agents.py"]
+    direction TB
+    TE_START([execute_task called]):::exec
+    TE1{at current waypoint?}:::decision
+    TE2[set target_location to waypoint\nreturn — move called next]:::exec
+    TE3[decrement phase_remaining_time]:::exec
+    TE4{fail check\np_eff = base_fail × 1 − skill}:::decision
+    TE5[_finish_task\nstatus = failed\nno reward]:::exec
+    TE6{phase_remaining_time > 0?}:::decision
+    TE7[still dwelling\nreturn — continue next step]:::exec
+    TE8[increment phase_index]:::exec
+    TE9{all phases done?}:::decision
+    TE10[_finish_task\nstatus = completed\ntransfer_reward]:::exec
+    TE11[load next waypoint\nupdate target_location]:::exec
+
+    TE_START --> TE1
+    TE1 -->|no| TE2
+    TE1 -->|yes| TE3
+    TE3 --> TE4
+    TE4 -->|fail| TE5
+    TE4 -->|pass| TE6
+    TE6 -->|yes| TE7
+    TE6 -->|no — dwell done| TE8
+    TE8 --> TE9
+    TE9 -->|yes| TE10
+    TE9 -->|no| TE11
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 8 · TASK ASSIGNMENT
+  %% ═══════════════════════════════════════════════════════════════
+  ML3 -.->|calls| TA_START
+
+  subgraph TASKASSIGN["🎯  assign_tasks  —  task_assignation.py"]
+    direction TB
+    TA_START([assign_tasks called]):::assign
+    TA0{task_queue empty?}:::decision
+    TA_SNAP[snapshot max_iterations\n= len task_queue at entry\niterations = 0]:::assign
+    TA1{iterations < max_iterations\nAND queue not empty?}:::decision
+    TA2[pop task from front of queue]:::assign
+    TA3[find eligible agents\nidle + has service + battery ≥ min_accept]:::assign
+    TA4{eligible agents found?}:::decision
+    TA5[requeue task at end of queue]:::assign
+    TA6[randomly select one agent]:::assign
+    TA7[agent.status = exec\ntask.status = in_progress\nset reward / skill / target]:::assign
+    TA8[iterations++]:::assign
+
+    TA_START --> TA0
+    TA0 -->|yes| TA_END([return]):::assign
+    TA0 -->|no| TA_SNAP
+    TA_SNAP --> TA1
+    TA1 -->|no — limit reached| TA_END
+    TA1 -->|yes| TA2
+    TA2 --> TA3
+    TA3 --> TA4
+    TA4 -->|no eligible| TA5
+    TA5 --> TA8
+    TA4 -->|found| TA6
+    TA6 --> TA7
+    TA7 --> TA8
+    TA8 --> TA1
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 9 · ECONOMY — reward transfer
+  %% ═══════════════════════════════════════════════════════════════
+  TE10 -.->|calls| EC_START
+
+  subgraph ECONOMY["💰  transfer_reward  —  economy.py"]
+    direction LR
+    EC_START([transfer_reward called]):::economy
+    EC1[find assigner agent by id]:::economy
+    EC2[assigner.wealth −= reward]:::economy
+    EC3[assignee.wealth += reward]:::economy
+
+    EC_START --> EC1
+    EC1 --> EC2
+    EC2 --> EC3
+  end
+
+  %% ═══════════════════════════════════════════════════════════════
+  %% 10 · METRICS COLLECTION
+  %% ═══════════════════════════════════════════════════════════════
+  ML4 -.->|calls| MC_START
+
+  subgraph METRICS["📊  datacollector.collect  —  metrics.py"]
+    direction LR
+    MC_START([collect called]):::metrics
+    MC1[Gini coefficient\nwealth inequality]:::metrics
+    MC2[tasks completed\ncumulative count]:::metrics
+    MC3[system total wealth\nsum of all agents]:::metrics
+    MC4[task queue size\nunassigned tasks]:::metrics
+    MC5[critical battery rate\n% robots with battery < 20 %]:::metrics
+
+    MC_START --> MC1
+    MC_START --> MC2
+    MC_START --> MC3
+    MC_START --> MC4
+    MC_START --> MC5
+  end
