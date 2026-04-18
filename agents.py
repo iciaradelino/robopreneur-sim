@@ -1,7 +1,7 @@
 import mesa
 import numpy as np
 from services import Service
-from utils import sample_reward, sample_work_time
+from utils import sample_reward
 from battery import update_battery
 from movement import check_if_at_location
 from economy import transfer_reward
@@ -49,16 +49,18 @@ def _execute_phase_task(agent, task):
         task.phase_remaining_time -= 1
         task.remaining_time = max(task.remaining_time - 1, 0)
 
-    # check if phase is completed
-    if task.phase_remaining_time > 0:
+    # per-step fail check: effective_p = base_fail_p * (1 - skill)
+    # higher skill lowers failure risk; base_fail_p captures task difficulty
+    fail_cfg = phase.get("fail", {"model": "per_phase", "p": 0.0})
+    base_fail_p = fail_cfg.get("p", 0.0)
+    skill = task.prob_completion if task.prob_completion is not None else 0.0
+    effective_p = base_fail_p * (1.0 - skill)
+    if agent.model.random.random() < effective_p:
+        _finish_task(agent, task, False)
         return True
 
-    # check if phase failed after the phase has been completed TO CHANGE
-    fail_cfg = phase.get("fail", {"model": "per_phase", "p": 0.0})
-    fail_probability = fail_cfg.get("p", 0.0)
-    # no need to hardcode battery charing, we can just specifiy 0 probability of failure in service descritpion 
-    if task.name != "BatteryCharging" and agent.model.random.random() < fail_probability:
-        _finish_task(agent, task, False)
+    # check if phase is completed
+    if task.phase_remaining_time > 0:
         return True
 
     # increment phase index to move to the next phase
@@ -111,24 +113,21 @@ class HumanAgent(mesa.Agent):
 
         # extract the services it offers from the config and 
         # create an instance of that service following the services.py template
-        service_names = agent_config.get('services')  # list like ['BatteryCharging', 'LabCleaning', ...]
+        # expected format: services: [- ServiceName: {skill: 0.95}]
+        raw_services = agent_config.get('services', [])
         self.services = []
-        for service_name in service_names:
-            services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
-            service_config = services_config[service_name]
-            
-            # sample specific values from distributions
+        for entry in raw_services:
+            service_name = next(iter(entry))
+            skill = entry[service_name].get('skill', 0.0)
+            service_config = model.services_config[service_name]
             reward_value = sample_reward(service_config['reward'], model.random)
-            # phase-based services may not define legacy work_time
-            work_time_cfg = service_config.get('work_time')
-            time_value = sample_work_time(work_time_cfg, model.random) if work_time_cfg is not None else None
-            
+
             service = Service(
                 id=service_name,
                 category=service_config['category'],
                 name=service_name,
                 reward=reward_value,
-                time=time_value  
+                skill=skill,
             )
             self.services.append(service)
 
@@ -192,25 +191,21 @@ class RobotAgent(mesa.Agent):
         self.recharge_task = None     # reference to the current recharge task 
         
         # extract the services it offers from the config and create instances
+        # expected format: services: [- ServiceName: {skill: 0.80}]
+        raw_services = agent_config.get('services', [])
         self.services = []
-        service_names = agent_config.get('services')  # list like ['LabCleaning', 'ItemTransport', ...]
-        
-        for service_name in service_names:
-            services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
-            service_config = services_config[service_name]
-
-            # sample specific values from distributions
+        for entry in raw_services:
+            service_name = next(iter(entry))
+            skill = entry[service_name].get('skill', 0.0)
+            service_config = model.services_config[service_name]
             reward_value = sample_reward(service_config['reward'], model.random)
-            # phase-based services may not define legacy work_time
-            work_time_cfg = service_config.get('work_time')
-            time_value = sample_work_time(work_time_cfg, model.random) if work_time_cfg is not None else None
-            
+
             service = Service(
                 id=service_name,
                 category=service_config['category'],
                 name=service_name,
-                reward=reward_value,  # sampled number
-                time=time_value  # sampled number
+                reward=reward_value,
+                skill=skill,
             )
             self.services.append(service)
 

@@ -134,14 +134,11 @@ def _assign_task_to_agent(model, task, agent):
     # update reward (we should explore more complex reward systems)
     task.reward = agent_service.reward
 
-    # update total task duration
-    if task.execution_details is not None:
-        task.time = task.execution_details["total_duration"]
-    else:
-        task.time = agent_service.time
+    # update total task duration from phase execution details
+    task.time = task.execution_details["total_duration"]
 
-    # update other agent properties
-    task.prob_completion = agent.completion_probability
+    # use the agent's per-service skill as the completion probability
+    task.prob_completion = agent_service.skill
     task.status = "in_progress"
     task.assignee_id = agent.agent_id
     task.remaining_time = task.time if task.time is not None else 0
