@@ -80,23 +80,6 @@ def _execute_phase_task(agent, task):
     # return True to continue execution
     return True
 
-# keep for now but change in the future 
-def _execute_legacy_task(agent, task):
-    """legacy single-location + remaining_time execution"""
-    if not check_if_at_location(agent, task.location):
-        agent.target_location = task.location
-        return
-
-    task.remaining_time -= 1
-    if task.remaining_time > 0:
-        return
-
-    if task.name == "BatteryCharging":
-        _finish_task(agent, task, True)
-        return
-
-    success = agent.model.random.random() < agent.completion_probability
-    _finish_task(agent, task, success)
 
 class HumanAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
@@ -106,7 +89,6 @@ class HumanAgent(mesa.Agent):
         self.status = "idle"
         self.current_task = None
         self.speed = agent_config.get('speed')
-        self.completion_probability = agent_config.get('completion_probability')
         self.schedule = agent_config.get('schedule', False)
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional 
@@ -166,11 +148,7 @@ class HumanAgent(mesa.Agent):
         self.location = new_pos
 
     def execute_task(self):
-        task = self.current_task
-        if task.execution_details is not None:
-            if _execute_phase_task(self, task):
-                return
-        _execute_legacy_task(self, task)
+        _execute_phase_task(self, self.current_task)
 
 
 class RobotAgent(mesa.Agent):
@@ -182,7 +160,6 @@ class RobotAgent(mesa.Agent):
         self.current_task = None
         self.battery = agent_config.get('initial_battery')
         self.speed = agent_config.get('speed', 1.5)
-        self.completion_probability = agent_config.get('completion_probability')
         self.random_walk_interval = agent_config.get('random_walk_interval')
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional
@@ -263,8 +240,4 @@ class RobotAgent(mesa.Agent):
 
 
     def execute_task(self):
-        task = self.current_task
-        if task.execution_details is not None:
-            if _execute_phase_task(self, task):
-                return
-        _execute_legacy_task(self, task)
+        _execute_phase_task(self, self.current_task)

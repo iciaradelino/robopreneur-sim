@@ -44,14 +44,13 @@ def resolve_waypoint(waypoint_config, model):
     """resolve a concrete waypoint from point config"""
     waypoint_type = waypoint_config["type"]
     if waypoint_type == "random_in_world":
-        world_size = model.world_config["size"] if hasattr(model, "world_config") else model.config["world"]["size"]
+        world_size = model.world_config["size"]
         return (
             model.random.random() * world_size,
             model.random.random() * world_size,
         )
     if waypoint_type == "charging_station":
-        world_config = model.world_config if hasattr(model, "world_config") else model.config["world"]
-        return tuple(world_config["charging_station"])
+        return tuple(model.world_config["charging_station"])
     raise ValueError(f"invalid waypoint type: {waypoint_type}")
 
 def build_execution_details(service_config, model):

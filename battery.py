@@ -10,11 +10,10 @@ def generate_recharge_task(model, robot):
     the robot requests help from a human to plug it in at the charging station
     """
     # load station location from world config
-    world_config = model.world_config if hasattr(model, 'world_config') else model.config['world']
-    station_location = tuple(world_config['charging_station'])
+    station_location = tuple(model.world_config['charging_station'])
 
     # load battery charging service config from services config
-    services_config = model.services_config if hasattr(model, 'services_config') else model.config['services']
+    services_config = model.services_config
     battery_service_config = services_config["BatteryCharging"]
     
     # create the task
@@ -51,9 +50,8 @@ def generate_recharge_task(model, robot):
 
 # complicated logic on this fucntion, double check 
 def update_battery(robot):
-    battery_config = robot.model.battery_config if hasattr(robot.model, 'battery_config') else robot.model.config['battery']
-    world_config = robot.model.world_config if hasattr(robot.model, 'world_config') else robot.model.config['world']
-    station = tuple(world_config['charging_station'])
+    battery_config = robot.model.battery_config
+    station = tuple(robot.model.world_config['charging_station'])
 
     # if the robot has a recharge task, use the station location from the task
     if robot.recharge_task is not None and robot.recharge_task.resolved_waypoints:
