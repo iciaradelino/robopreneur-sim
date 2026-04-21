@@ -84,14 +84,16 @@ class RobopreneurModel(mesa.Model):
         4. Assign tasks from queue
         5. Record data  
         '''
-        
+        # create tasks
         generate_tasks(self)
 
         # updates the status of agents and tasks
         self.agents.do("step") 
 
+        # assign tasks to agents
         assign_tasks(self)
 
+        # record data
         self.datacollector.collect(self)
 
         # check if simulation should stop 

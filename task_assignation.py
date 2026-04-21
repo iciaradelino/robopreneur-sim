@@ -56,7 +56,6 @@ def generate_tasks(model):
 # find the available agents for a given task
 def _get_eligible_agents(model, task):
     """
-    find all agents eligible for a given task
     eligibility criteria:
     1. agent.status == "idle"
     2. agent has a service matching task.name
@@ -117,8 +116,8 @@ def _assign_task_to_agent(model, task, agent):
     # update total task duration from phase execution details
     task.time = task.execution_details["total_duration"]
 
-    # use the agent's per-service skill as the completion probability
-    task.prob_completion = agent_service.skill
+    # store agent's skill on the task for use in failure probability calculation
+    task.agent_skill = agent_service.skill
     task.status = "in_progress"
     task.assignee_id = agent.agent_id
     task.remaining_time = task.time if task.time is not None else 0

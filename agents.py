@@ -24,7 +24,7 @@ def _finish_task(agent, task, success):
     agent.current_task = None
 
 def _execute_phase_task(agent, task):
-    """phase-based execution: travel -> dwell -> fail check -> next phase"""
+    """phase-based execution: travel -> dwell -> next phase"""
 
     # if it has no phase data, don't execute
     if not task.resolved_waypoints:
@@ -53,7 +53,7 @@ def _execute_phase_task(agent, task):
     # higher skill lowers failure risk; base_fail_p captures task difficulty
     fail_cfg = phase.get("fail", {"model": "per_phase", "p": 0.0})
     base_fail_p = fail_cfg.get("p", 0.0)
-    skill = task.prob_completion if task.prob_completion is not None else 0.0
+    skill = task.agent_skill if task.agent_skill is not None else 0.0
     effective_p = base_fail_p * (1.0 - skill)
     if agent.model.random.random() < effective_p:
         _finish_task(agent, task, False)
@@ -79,7 +79,6 @@ def _execute_phase_task(agent, task):
     agent.target_location = next_phase["point"]
     # return True to continue execution
     return True
-
 
 class HumanAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
@@ -149,7 +148,6 @@ class HumanAgent(mesa.Agent):
 
     def execute_task(self):
         _execute_phase_task(self, self.current_task)
-
 
 class RobotAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
