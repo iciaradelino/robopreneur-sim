@@ -12,19 +12,6 @@ def sample_reward(reward_config, rng):
     mu = np.log(median)
     return rng.lognormal(mu, sigma_g)
 
-def sample_work_time(time_config, rng):
-    """sample work time from normal distribution with minimum"""
-    mean = time_config['mean']
-    sd = time_config['sd']
-    min_time = time_config['min']
-    
-    if sd == 0:
-        return mean  # deterministic
-    
-    # sample from normal and apply minimum
-    sampled_time = rng.normal(mean, sd)
-    return max(sampled_time, min_time)
-
 def sample_duration(duration_config, rng):
     """sample duration from scalar or normal distribution with minimum"""
     # scalar duration
