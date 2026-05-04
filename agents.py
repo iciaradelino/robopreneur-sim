@@ -77,10 +77,14 @@ def _finish_task(agent, task, success):
 
     # record completion step
     task.completed_step = agent.model.steps
-    # add to completed tasks list
-    agent.model.completed_tasks.append(task)
     # update task status
     task.status = "completed" if success else "failed"
+    # add to completed tasks list
+    agent.model.completed_tasks.append(task)
+    if task.status == "completed" and hasattr(agent.model, "completed_task_count"):
+        agent.model.completed_task_count += 1
+    if task.status == "failed" and hasattr(agent.model, "failed_task_count"):
+        agent.model.failed_task_count += 1
     # transfer reward if task is successful
     if success:
         transfer_reward(agent.model, task, agent)

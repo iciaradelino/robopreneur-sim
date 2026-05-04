@@ -62,7 +62,9 @@ class RobopreneurModel(mesa.Model):
         )
 
         self.task_queue = [] # task queue for unassigned tasks
-        self.task_counter = 0 # to count how many tasks are completed during the simulation
+        self.task_counter = 0 # running id / created-task counter
+        self.completed_task_count = 0 # cumulative successfully completed tasks
+        self.failed_task_count = 0 # cumulative failed tasks
 
         self.initialize_agents()
         self.running = True

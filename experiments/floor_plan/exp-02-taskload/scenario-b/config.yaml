@@ -1,0 +1,191 @@
+# experiment 2 - task load stress test
+# scenario b: medium load (arrival_rate = 8)
+
+simulation:
+  seed: 42
+  duration: 1000
+
+world:
+  mode: floor_plan # square (default) or floor_plan
+  size: 100
+  boundaries: false
+  charging_station: [0, 0]
+  floor_plan:
+    exterior:
+      - [-4.0, -2.0] # d bottom-left
+      - [4.0, -2.0] # a bottom-right
+      - [4.0, 8.0] # b top-right
+      - [-4.0, 8.0] # c top-left
+    holes:
+      - # inner obstacle (ring opposite winding to exterior for shapely)
+        - [-1.5, 2.0] # i bottom-left
+        - [-1.5, 6.0] # h top-left
+        - [1.5, 6.0] # g top-right
+        - [1.5, 2.0] # f bottom-right
+
+humans:
+  human_1:
+    num: 2
+    initial_wealth: 2000
+    schedule: false
+    speed: 2
+    services:
+      - BatteryCharging: { skill: 0.95 }
+      - LabCleaning: { skill: 0.95 }
+      - ItemTransport: { skill: 0.95 }
+      - PowerSupply: { skill: 0.95 }
+      - SystemUpdate: { skill: 0.95 }
+      - FunctionalityTest: { skill: 0.95 }
+
+  human_2:
+    num: 1
+    initial_wealth: 2000
+    schedule: false
+    speed: 2
+    services:
+      - BatteryCharging: { skill: 0.95 }
+      - LabCleaning: { skill: 0.95 }
+      - ItemTransport: { skill: 0.95 }
+      - PowerSupply: { skill: 0.95 }
+      - SystemUpdate: { skill: 0.95 }
+      - FunctionalityTest: { skill: 0.95 }
+
+robots:
+  robot_1: 
+    num: 2
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5
+    random_walk_interval: 5
+    services:
+      - LabCleaning: { skill: 0.8 }
+      - ItemTransport: { skill: 0.8 }
+      - SurveillancePatrol: { skill: 0.8 }
+      - ComponentRestock: { skill: 0.8 }
+
+  robot_2: 
+    num: 1
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5
+    random_walk_interval: 5
+    services:
+      - LabCleaning: { skill: 0.8 }
+      - ItemTransport: { skill: 0.8 }
+      - SurveillancePatrol: { skill: 0.8 }
+      - ComponentRestock: { skill: 0.8 }
+
+battery:
+  recharge_rate: 0.167
+  drain_rate: 0.2
+  recharge_trigger: 30
+  min_accept_task: 35
+
+tasks:
+  arrival_rate: 8  # VARIABLE: medium load
+  proximity_threshold: 0.5
+
+assignment_policy: random
+
+pricing_model: fixed
+
+services:
+  BatteryCharging:
+    category: maintenance
+    reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: station
+          point: { type: charging_station }
+          duration: {mean: 10, sd: 0, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  PowerSupply:
+    category: maintenance
+    reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  ComponentRestock:
+    category: maintenance
+    reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  SystemUpdate:
+    category: maintenance
+    reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  FunctionalityTest:
+    category: maintenance
+    reward: {median: 120, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: site
+          point: { type: random_in_world }
+          duration: {mean: 10, sd: 0, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  LabCleaning:
+    category: cleaning
+    reward: {median: 140, sigma_g: 0.35}
+    phases:
+      waypoints:
+        - id: area
+          point: { type: random_in_world }
+          duration: {mean: 20, sd: 8, min: 6}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  ItemTransport:
+    category: transport
+    reward: {median: 130, sigma_g: 0.35}
+    phases:
+      waypoints:
+        - id: pickup
+          point: { type: random_in_world }
+          duration: 10
+          fail: 0.08
+        - id: dropoff
+          point: { type: random_in_world }
+          duration: 10
+          fail: 0.01
+      in_order: true
+      repeat: 0
+
+  SurveillancePatrol:
+    category: security
+    reward: {median: 180, sigma_g: 0.35}
+    phases:
+      waypoints:
+        - id: patrol_1
+          point: { type: random_in_world }
+          duration: {mean: 30, sd: 10, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0

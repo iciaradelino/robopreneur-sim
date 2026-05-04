@@ -19,7 +19,9 @@ def compute_total_tasks_completed(model):
     """
     compute the cumulative number of tasks completed during the simulation.
     """
-    return model.task_counter
+    if hasattr(model, "completed_task_count"):
+        return model.completed_task_count
+    return sum(1 for task in model.completed_tasks if getattr(task, "status", None) == "completed")
 
 
 def compute_total_system_wealth(model):

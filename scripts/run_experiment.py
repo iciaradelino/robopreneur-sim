@@ -72,6 +72,8 @@ class RobopreneurModel(mesa.Model):
 
         self.task_queue = []
         self.task_counter = 0
+        self.completed_task_count = 0
+        self.failed_task_count = 0
         self.completed_tasks = []  # for task lifecycle export
 
         self.initialize_agents()
