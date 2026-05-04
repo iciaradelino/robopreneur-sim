@@ -2,12 +2,25 @@
 
 simulation:
   seed: 32
-  duration: 500 # in steps
+  duration: 10000 # in steps
 
 world:
+  mode: floor_plan # square (default) or floor_plan
   size: 100 # 100x100 continuous space
   boundaries: false # no wrap around, how to do this?
-  charging_station: [50, 50]
+  charging_station: [0, 0]
+  floor_plan:
+    exterior:
+      - [-4.0, -2.0] # d bottom-left
+      - [4.0, -2.0] # a bottom-right
+      - [4.0, 8.0] # b top-right
+      - [-4.0, 8.0] # c top-left
+    holes:
+      - # inner obstacle (ring opposite winding to exterior for shapely)
+        - [-1.5, 2.0] # i bottom-left
+        - [-1.5, 6.0] # h top-left
+        - [1.5, 6.0] # g top-right
+        - [1.5, 2.0] # f bottom-right
 
 humans:
   human_1:

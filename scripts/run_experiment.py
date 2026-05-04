@@ -19,6 +19,7 @@ from tasks import Task
 from services import Service
 from metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
 from task_assignation import generate_tasks, assign_tasks
+from floor_plan import FloorPlan
 
 # modified robopreneurmodel that accepts config dict
 class RobopreneurModel(mesa.Model):
@@ -36,12 +37,27 @@ class RobopreneurModel(mesa.Model):
         self.services_config = config['services']
 
         self.random = np.random.default_rng(self.sim_config['seed'])
+        self.world_mode = self.world_config.get("mode", "square")
 
-        self.space = mesa.space.ContinuousSpace(
-            self.world_config['size'], 
-            self.world_config['size'], 
-            torus=self.world_config['boundaries']
-        )
+        self.floor_plan = None
+        if self.world_mode == "floor_plan":
+            floor_plan_config = self.world_config.get("floor_plan", {})
+            self.floor_plan = FloorPlan(floor_plan_config)
+            self.space = mesa.space.ContinuousSpace(
+                self.floor_plan.width,
+                self.floor_plan.height,
+                torus=False,
+            )
+            charging_station = tuple(self.world_config.get("charging_station", (0, 0)))
+            self.world_config["charging_station"] = list(
+                self.floor_plan.normalize_point(charging_station)
+            )
+        else:
+            self.space = mesa.space.ContinuousSpace(
+                self.world_config['size'],
+                self.world_config['size'],
+                torus=self.world_config['boundaries']
+            )
 
         self.datacollector = mesa.DataCollector(
             model_reporters={
@@ -69,7 +85,7 @@ class RobopreneurModel(mesa.Model):
             for i in range(num_agents):
                 agent_id = f"{human_type}_{i}"
                 human = HumanAgent(self, agent_id, human_config)
-                pos = (self.random.random() * self.world_config['size'], self.random.random() * self.world_config['size'])
+                pos = self._random_world_position()
                 self.space.place_agent(human, pos)
                 human.location = pos
                 human.target_location = pos
@@ -80,10 +96,18 @@ class RobopreneurModel(mesa.Model):
             for i in range(num_agents):
                 agent_id = f"{robot_type}_{i}"
                 robot = RobotAgent(self, agent_id, robot_config)
-                pos = (self.random.random() * self.world_config['size'], self.random.random() * self.world_config['size'])
+                pos = self._random_world_position()
                 self.space.place_agent(robot, pos)
                 robot.location = pos
                 robot.target_location = pos
+
+    def _random_world_position(self):
+        if self.floor_plan:
+            return self.floor_plan.random_point(self.random)
+        return (
+            self.random.random() * self.world_config['size'],
+            self.random.random() * self.world_config['size'],
+        )
 
     def step(self):
         generate_tasks(self)

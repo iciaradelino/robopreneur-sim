@@ -31,6 +31,10 @@ def resolve_waypoint(waypoint_config, model):
     """resolve a concrete waypoint from point config"""
     waypoint_type = waypoint_config["type"]
     if waypoint_type == "random_in_world":
+        # if a floor plan is defined use it to sample a random point
+        if getattr(model, "floor_plan", None):
+            return model.floor_plan.random_point(model.random)
+        # otherwise sample a random point in the world
         world_size = model.world_config["size"]
         return (
             model.random.random() * world_size,

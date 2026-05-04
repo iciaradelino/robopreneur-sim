@@ -2,10 +2,9 @@ import mesa
 import numpy as np
 
 from agents import HumanAgent, RobotAgent
-from tasks import Task
-from services import Service
 from metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
 from task_assignation import generate_tasks, assign_tasks
+from floor_plan import FloorPlan
 
 # load the config from the config.yaml file
 from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
@@ -24,12 +23,27 @@ class RobopreneurModel(mesa.Model):
         self.services_config = services_config
         self.completed_tasks = []
         self.random = np.random.default_rng(sim_config['seed'])
+        self.world_mode = self.world_config.get("mode", "square")
 
-        self.space = mesa.space.ContinuousSpace(
-            world_config['size'], 
-            world_config['size'], 
-            torus=world_config['boundaries']
-        )
+        self.floor_plan = None
+        if self.world_mode == "floor_plan":
+            floor_plan_config = self.world_config.get("floor_plan", {})
+            self.floor_plan = FloorPlan(floor_plan_config)
+            self.space = mesa.space.ContinuousSpace(
+                self.floor_plan.width,
+                self.floor_plan.height,
+                torus=False,
+            )
+            charging_station = tuple(self.world_config.get("charging_station", (0, 0)))
+            self.world_config["charging_station"] = list(
+                self.floor_plan.normalize_point(charging_station)
+            )
+        else:
+            self.space = mesa.space.ContinuousSpace(
+                world_config['size'],
+                world_config['size'],
+                torus=world_config['boundaries']
+            )
 
         self.datacollector = mesa.DataCollector(
             model_reporters={
@@ -39,7 +53,12 @@ class RobopreneurModel(mesa.Model):
                 "Queue_Size": compute_task_queue_size,
                 "Critical_Battery": compute_critical_battery_rate
             },
-            agent_reporters={"Wealth": "wealth", "Battery": lambda a: getattr(a, 'battery', None)}
+            agent_reporters={
+                "Wealth": "wealth",
+                "Battery": lambda a: getattr(a, "battery", None),
+                "Status": "status",
+                "Agent_Type": lambda a: "robot" if hasattr(a, "battery") else "human",
+            }
         )
 
         self.task_queue = [] # task queue for unassigned tasks
@@ -58,7 +77,7 @@ class RobopreneurModel(mesa.Model):
                 agent_id = f"{human_type}_{i}"
                 # create the human agent, place it in the space, gets all the services appened at init
                 human = HumanAgent(self, agent_id, human_config)
-                pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
+                pos = self._random_world_position()
                 self.space.place_agent(human, pos)
                 human.location = pos
                 human.target_location = pos
@@ -71,10 +90,18 @@ class RobopreneurModel(mesa.Model):
                 agent_id = f"{robot_type}_{i}"
                 # create the robot agent, place it in the space, gets all the services appened at init
                 robot = RobotAgent(self, agent_id, robot_config)
-                pos = (self.random.random() * world_config['size'], self.random.random() * world_config['size'])
+                pos = self._random_world_position()
                 self.space.place_agent(robot, pos)
                 robot.location = pos
                 robot.target_location = pos
+
+    def _random_world_position(self):
+        if self.floor_plan:
+            return self.floor_plan.random_point(self.random)
+        return (
+            self.random.random() * world_config['size'],
+            self.random.random() * world_config['size'],
+        )
 
     def step(self):
         '''

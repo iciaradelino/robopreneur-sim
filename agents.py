@@ -6,6 +6,71 @@ from battery import update_battery
 from movement import check_if_at_location
 from economy import transfer_reward
 
+def _pick_random_target(agent):
+    ''' pick a random target for the agent '''
+    floor_plan = getattr(agent.model, "floor_plan", None)
+    if floor_plan:
+        return floor_plan.random_point(agent.model.random)
+    world_size = agent.model.world_config['size']
+    return (
+        agent.model.random.random() * world_size,
+        agent.model.random.random() * world_size,
+    )
+
+def _resolve_step_target(agent):
+    '''which point to steer toward this step: final target (square) or next path vertex (floor_plan).'''
+    # already at final target move() should not advance further
+    if check_if_at_location(agent, agent.target_location):
+        return None
+
+    floor_plan = getattr(agent.model, "floor_plan", None)
+    # if in square mode steer straight at target_location
+    if floor_plan is None:
+        return agent.target_location
+
+    # floor_plan mode: if the assignment changed the final goal, recompute the polyline once
+    if agent._nav_target != agent.target_location:
+        agent._nav_path = floor_plan.compute_path(agent.pos, agent.target_location) or []
+        agent._nav_target = agent.target_location
+
+    # drop vertices we have already reached (within proximity_threshold)
+    while agent._nav_path and check_if_at_location(agent, agent._nav_path[0]):
+        agent._nav_path.pop(0)
+
+    # steer at the next corner on the route, or at the goal if the path is empty / degenerate
+    if agent._nav_path:
+        return agent._nav_path[0]
+    return agent.target_location
+
+def _move_towards_target(agent, step_target):
+    '''one timestep of motion: same speed-limited vector step as before; mesa stores the new position.'''
+    # nothing to do (like already at target)
+    if step_target is None:
+        return
+
+    # get current position 
+    current_pos = np.array(agent.pos)
+    target_pos = np.array(step_target)
+
+    # calculate the direction and distance to the target
+    direction = target_pos - current_pos
+    distance = np.linalg.norm(direction)
+    if distance == 0:
+        return
+
+    # if the distance is less than the speed, move to the target
+    if distance <= agent.speed:
+        new_pos = tuple(target_pos)
+    # otherwise, move towards the target at the speed
+    else:
+        # normalize the direction to unit length
+        direction_normalized = direction / distance
+        new_pos = tuple(current_pos + direction_normalized * agent.speed)
+
+    # move the agent to the new position
+    agent.model.space.move_agent(agent, new_pos)
+    agent.location = new_pos
+
 # helper function to avoid code duplication
 def _finish_task(agent, task, success):
     """finalize task lifecycle, release agent and transfer reward"""
@@ -91,6 +156,8 @@ class HumanAgent(mesa.Agent):
         self.schedule = agent_config.get('schedule', False)
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional 
+        self._nav_path = []  # list of tuples with the path to the target so that it doesn't walk through holes
+        self._nav_target = None  # tuple | None: last target_location we built _nav_path for so that it doesn't recompute the path
 
         # extract the services it offers from the config and 
         # create an instance of that service following the services.py template
@@ -122,29 +189,8 @@ class HumanAgent(mesa.Agent):
 
 
     def move(self):
-        # get current position from mesa space
-        current_pos = np.array(self.pos)
-        target_pos = np.array(self.target_location)
-
-        if check_if_at_location(self, self.target_location):
-            return
-        
-        # calculate direction vector and distance
-        direction = target_pos - current_pos
-        distance = np.linalg.norm(direction)
-        
-        # move at most self.speed units toward target
-        if distance <= self.speed:
-            # can reach target this step
-            new_pos = tuple(target_pos)
-        else:
-            # normalize so we move exactly self.speed units (direction has length distance, not 1)
-            direction_normalized = direction / distance
-            new_pos = tuple(current_pos + direction_normalized * self.speed)
-        
-        # update position in mesa space
-        self.model.space.move_agent(self, new_pos)
-        self.location = new_pos
+        step_target = _resolve_step_target(self)
+        _move_towards_target(self, step_target)
 
     def execute_task(self):
         _execute_phase_task(self, self.current_task)
@@ -161,6 +207,8 @@ class RobotAgent(mesa.Agent):
         self.random_walk_interval = agent_config.get('random_walk_interval')
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional
+        self._nav_path = []  # list[tuple[float, float]]: jupedsim route corners when world.mode=floor_plan
+        self._nav_target = None  # tuple | None: last target_location we built _nav_path for (cache key)
         self.awaiting_recharge = False # tracks if robot is waiting for recharge
         self.is_charging = False      # latches true once human and robot are both at the station
         self.recharge_task = None     # reference to the current recharge task 
@@ -185,8 +233,7 @@ class RobotAgent(mesa.Agent):
             self.services.append(service)
 
         # initialize target location randomly so idle robots start walking immediately
-        world_size = self.model.world_config['size']
-        self.target_location = (self.model.random.random() * world_size, self.model.random.random() * world_size)
+        self.target_location = _pick_random_target(self)
         self.walk_counter = 0  # counts steps since last random target pick
 
     def step(self):
@@ -201,40 +248,15 @@ class RobotAgent(mesa.Agent):
         if self.status == "idle":
             self.walk_counter += 1
             if self.walk_counter >= self.random_walk_interval:
-                world_size = self.model.world_config['size']
-                self.target_location = (
-                    self.model.random.random() * world_size,
-                    self.model.random.random() * world_size
-                )
+                self.target_location = _pick_random_target(self)
                 self.walk_counter = 0
 
         # movement (checks if already at target)
         self.move()
 
     def move(self):
-        # if already at target (within proximity threshold), do nothing
-        if check_if_at_location(self, self.target_location):
-            return
-        
-        # get current position from mesa space
-        current_pos = np.array(self.pos)
-        target_pos = np.array(self.target_location)
-        
-        # calculate direction vector and distance
-        direction = target_pos - current_pos
-        distance = np.linalg.norm(direction)
-        
-        # if within reach moves to exact target
-        if distance <= self.speed:
-            new_pos = tuple(target_pos)
-        # if not within reach moves towards target at speed
-        else:
-            direction_normalized = direction / distance
-            new_pos = tuple(current_pos + direction_normalized * self.speed)
-        
-        # update position in mesa space
-        self.model.space.move_agent(self, new_pos)
-        self.location = new_pos
+        step_target = _resolve_step_target(self)
+        _move_towards_target(self, step_target)
 
 
     def execute_task(self):
