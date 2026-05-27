@@ -119,18 +119,18 @@ def _execute_phase_task(agent, task):
         task.phase_remaining_time -= 1
         task.remaining_time = max(task.remaining_time - 1, 0)
 
-    # per-step fail check: effective_p = base_fail_p * (1 - skill)
-    # higher skill lowers failure risk; base_fail_p captures task difficulty
+    # still dwelling — nothing more to do this step
+    if task.phase_remaining_time > 0:
+        return True
+
+    # phase just finished: evaluate fail once per phase completion
+    # effective_p = base_fail_p * (1 - skill); higher skill lowers failure risk
     fail_cfg = phase.get("fail", {"model": "per_phase", "p": 0.0})
     base_fail_p = fail_cfg.get("p", 0.0)
     skill = task.agent_skill if task.agent_skill is not None else 0.0
     effective_p = base_fail_p * (1.0 - skill)
     if agent.model.random.random() < effective_p:
         _finish_task(agent, task, False)
-        return True
-
-    # check if phase is completed
-    if task.phase_remaining_time > 0:
         return True
 
     # increment phase index to move to the next phase

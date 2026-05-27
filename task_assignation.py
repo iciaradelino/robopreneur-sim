@@ -13,6 +13,8 @@ def _create_task(model, service_name):
 
     # build execution details first so we can use the first waypoint as location
     execution_details = build_execution_details(service_config, model)
+    if execution_details is None or not execution_details["resolved_waypoints"]:
+        return
     first_point = execution_details["resolved_waypoints"][0]["point"]
 
     # create task without reward, time, or completion probability (set when assigned)
