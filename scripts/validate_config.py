@@ -129,9 +129,6 @@ def validate_service_def(name, svc):
             validate_duration_field(wp.get("duration"), wp_path)
             check(is_fraction(wp.get("fail")), f"{wp_path}.fail: must be a number between 0 and 1")
 
-    check(isinstance(phases.get("in_order"), bool), f"{path}.phases.in_order: must be a boolean")
-    check(isinstance(phases.get("repeat"), int) and phases.get("repeat", -1) >= 0,
-          f"{path}.phases.repeat: must be a non-negative integer")
 
 
 def validate_services_section(cfg):

@@ -161,20 +161,22 @@ def _assign_task_to_agent(model, task, agent):
     agent.status = "exec"
     agent.current_task = task
 
+    # reset phase state so re-assigned tasks always start from the beginning
+    task.phase_index = 0
+    task.phase_remaining_time = task.resolved_waypoints[0].get("duration", 0) if task.resolved_waypoints else 0
+    task.time = task.execution_details["total_duration"]
+    task.remaining_time = task.time
+
     # update agent target location to first waypoint
-    agent.target_location = task.resolved_waypoints[task.phase_index]["point"]
-    
+    agent.target_location = task.resolved_waypoints[0]["point"]
+
     # update reward (we should explore more complex reward systems)
     task.reward = agent_service.reward
-
-    # update total task duration from phase execution details
-    task.time = task.execution_details["total_duration"]
 
     # store agent's skill on the task for use in failure probability calculation
     task.agent_skill = agent_service.skill
     task.status = "in_progress"
     task.assignee_id = agent.agent_id
-    task.remaining_time = task.time if task.time is not None else 0
     # lifecycle: record assignment step
     task.assigned_step = model.steps
 

@@ -13,19 +13,19 @@ def sample_reward(reward_config, rng):
     return rng.lognormal(mu, sigma_g)
 
 def sample_duration(duration_config, rng):
-    """sample duration from scalar or normal distribution with minimum"""
+    """sample duration from scalar or normal distribution with minimum; always returns int steps"""
     # scalar duration
     if isinstance(duration_config, (int, float)):
-        return duration_config
+        return int(round(duration_config))
 
     # normal distribution duration
     mean = duration_config["mean"]
     sd = duration_config["sd"]
     min_duration = duration_config["min"]
     if sd == 0:
-        return mean
+        return int(round(mean))
     sampled_duration = rng.normal(mean, sd)
-    return max(sampled_duration, min_duration)
+    return int(round(max(sampled_duration, min_duration)))
 
 def resolve_waypoint(waypoint_config, model):
     """resolve a concrete waypoint from point config"""
@@ -82,10 +82,8 @@ def build_execution_details(service_config, model):
         )
         total_duration += duration
 
-    # return one execution deatils dict with all the components
+    # return one execution details dict with all the components
     return {
-        "in_order": phases_config.get("in_order", True),
-        "repeat": phases_config.get("repeat", 0),
         "phase_index": 0,
         "phase_remaining_time": resolved_waypoints[0]["duration"] if resolved_waypoints else 0,
         "resolved_waypoints": resolved_waypoints,
