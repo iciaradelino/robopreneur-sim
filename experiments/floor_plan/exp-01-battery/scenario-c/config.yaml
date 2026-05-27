@@ -9,19 +9,19 @@ world:
   mode: floor_plan # square (default) or floor_plan
   size: 100
   boundaries: false
-  charging_station: [0, 0]
+  charging_station: [50, 20]
   floor_plan:
     exterior:
-      - [-4.0, -2.0] # d bottom-left
-      - [4.0, -2.0] # a bottom-right
-      - [4.0, 8.0] # b top-right
-      - [-4.0, 8.0] # c top-left
+      - [10.0, 0.0]   # d bottom-left
+      - [90.0, 0.0]   # a bottom-right
+      - [90.0, 100.0] # b top-right
+      - [10.0, 100.0] # c top-left
     holes:
       - # inner obstacle (ring opposite winding to exterior for shapely)
-        - [-1.5, 2.0] # i bottom-left
-        - [-1.5, 6.0] # h top-left
-        - [1.5, 6.0] # g top-right
-        - [1.5, 2.0] # f bottom-right
+        - [35.0, 40.0] # i bottom-left
+        - [35.0, 80.0] # h top-left
+        - [65.0, 80.0] # g top-right
+        - [65.0, 40.0] # f bottom-right
 
 humans:
   human_1:
@@ -92,100 +92,100 @@ pricing_model: fixed
 services:
   BatteryCharging:
     category: maintenance
-    reward: {median: 120, sigma_g: 0}
+    reward: {median: 80, sigma_g: 0.1}
     phases:
       waypoints:
         - id: station
           point: { type: charging_station }
-          duration: {mean: 10, sd: 0, min: 10}
+          duration: {mean: 30, sd: 5, min: 15}
           fail: 0.0
       in_order: true
       repeat: 0
 
   PowerSupply:
     category: maintenance
-    reward: {median: 120, sigma_g: 0}
+    reward: {median: 100, sigma_g: 0.15}
     phases:
       waypoints:
         - id: site
           point: { type: random_in_world }
-          duration: {mean: 10, sd: 0, min: 10}
-          fail: 0.0
+          duration: {mean: 25, sd: 5, min: 10}
+          fail: 0.05
       in_order: true
       repeat: 0
 
   ComponentRestock:
     category: maintenance
-    reward: {median: 120, sigma_g: 0}
+    reward: {median: 110, sigma_g: 0.2}
     phases:
       waypoints:
         - id: site
           point: { type: random_in_world }
-          duration: {mean: 10, sd: 0, min: 10}
-          fail: 0.0
+          duration: {mean: 30, sd: 8, min: 10}
+          fail: 0.08
       in_order: true
       repeat: 0
 
   SystemUpdate:
     category: maintenance
-    reward: {median: 120, sigma_g: 0}
+    reward: {median: 120, sigma_g: 0.2}
     phases:
       waypoints:
         - id: site
           point: { type: random_in_world }
-          duration: {mean: 10, sd: 0, min: 10}
-          fail: 0.0
+          duration: {mean: 40, sd: 10, min: 15}
+          fail: 0.10
       in_order: true
       repeat: 0
 
   FunctionalityTest:
     category: maintenance
-    reward: {median: 120, sigma_g: 0}
+    reward: {median: 115, sigma_g: 0.2}
     phases:
       waypoints:
         - id: site
           point: { type: random_in_world }
-          duration: {mean: 10, sd: 0, min: 10}
-          fail: 0.0
+          duration: {mean: 35, sd: 8, min: 12}
+          fail: 0.12
       in_order: true
       repeat: 0
 
   LabCleaning:
     category: cleaning
-    reward: {median: 140, sigma_g: 0.35}
+    reward: {median: 140, sigma_g: 0.25}
     phases:
       waypoints:
         - id: area
           point: { type: random_in_world }
-          duration: {mean: 20, sd: 8, min: 6}
-          fail: 0.0
+          duration: {mean: 45, sd: 12, min: 15}
+          fail: 0.08
       in_order: true
       repeat: 0
 
   ItemTransport:
     category: transport
-    reward: {median: 130, sigma_g: 0.35}
+    reward: {median: 130, sigma_g: 0.2}
     phases:
       waypoints:
         - id: pickup
           point: { type: random_in_world }
-          duration: 10
-          fail: 0.08
+          duration: {mean: 15, sd: 4, min: 5}
+          fail: 0.10
         - id: dropoff
           point: { type: random_in_world }
-          duration: 10
-          fail: 0.01
+          duration: {mean: 15, sd: 4, min: 5}
+          fail: 0.05
       in_order: true
       repeat: 0
 
   SurveillancePatrol:
     category: security
-    reward: {median: 180, sigma_g: 0.35}
+    reward: {median: 180, sigma_g: 0.25}
     phases:
       waypoints:
         - id: patrol_1
           point: { type: random_in_world }
-          duration: {mean: 30, sd: 10, min: 10}
-          fail: 0.0
+          duration: {mean: 50, sd: 15, min: 15}
+          fail: 0.07
       in_order: true
       repeat: 0

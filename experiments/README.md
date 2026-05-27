@@ -88,7 +88,7 @@ After running an experiment, each scenario folder will contain:
 - `wealth_distribution.png` - Final wealth histogram
 - `wealth_boxplot.png` - Wealth box plot
 - `task_completion_rate.png` - Completion rate
-- `wealth_growth_rate.png` - Growth rate
+- `task_execution_time_by_type.png` - Completion execution times by task type
 
 ## Running All Scenarios
 

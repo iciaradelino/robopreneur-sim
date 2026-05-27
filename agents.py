@@ -5,6 +5,7 @@ from utils import sample_reward
 from battery import update_battery
 from movement import check_if_at_location
 from economy import transfer_reward
+from schedule import parse_active_window, is_active
 
 def _pick_random_target(agent):
     ''' pick a random target for the agent '''
@@ -149,6 +150,24 @@ def _execute_phase_task(agent, task):
     # return True to continue execution
     return True
 
+# to avoid duplicated logic in robot and human 
+def _apply_schedule_state(agent):
+    """toggle active/inactive state based on configured schedule."""
+    if is_active(agent.model, agent):
+        if agent.status == "inactive":
+            agent.status = "idle"
+        return True
+
+    if agent.status == "exec" and agent.current_task is not None:
+        # return interrupted task to queue so it can be reassigned later
+        agent.current_task.status = "pending"
+        agent.current_task.assignee_id = None
+        agent.model.task_queue.append(agent.current_task)
+        agent.current_task = None
+
+    agent.status = "inactive"
+    return False
+
 class HumanAgent(mesa.Agent):
     def __init__(self, model, agent_id, agent_config):
         super().__init__(model)
@@ -158,6 +177,7 @@ class HumanAgent(mesa.Agent):
         self.current_task = None
         self.speed = agent_config.get('speed')
         self.schedule = agent_config.get('schedule', False)
+        self.active_from_minute, self.active_until_minute = parse_active_window(self.schedule)
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional 
         self._nav_path = []  # list of tuples with the path to the target so that it doesn't walk through holes
@@ -184,6 +204,9 @@ class HumanAgent(mesa.Agent):
             self.services.append(service)
 
     def step(self):
+        if not _apply_schedule_state(self):
+            return
+
         # task execution
         if self.status == "exec" and self.current_task is not None:
             self.execute_task()
@@ -209,6 +232,8 @@ class RobotAgent(mesa.Agent):
         self.battery = agent_config.get('initial_battery')
         self.speed = agent_config.get('speed', 1.5)
         self.random_walk_interval = agent_config.get('random_walk_interval')
+        self.schedule = agent_config.get('schedule', False)
+        self.active_from_minute, self.active_until_minute = parse_active_window(self.schedule)
         self.location = (0, 0) # this should be initialized randomly 
         self.target_location = (0, 0) # this should be optional
         self._nav_path = []  # list[tuple[float, float]]: jupedsim route corners when world.mode=floor_plan
@@ -241,6 +266,9 @@ class RobotAgent(mesa.Agent):
         self.walk_counter = 0  # counts steps since last random target pick
 
     def step(self):
+        if not _apply_schedule_state(self):
+            return
+
         # update battery
         update_battery(self)
         

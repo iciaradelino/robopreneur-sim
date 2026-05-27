@@ -53,6 +53,10 @@ def update_battery(robot):
     battery_config = robot.model.battery_config
     station = tuple(robot.model.world_config['charging_station'])
 
+    # paused robots do not drain or charge while inactive
+    if robot.status == "inactive":
+        return
+
     # if the robot has a recharge task, use the station location from the task
     if robot.recharge_task is not None and robot.recharge_task.resolved_waypoints:
         station = robot.recharge_task.resolved_waypoints[0]["point"]

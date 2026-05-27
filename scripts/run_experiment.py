@@ -12,6 +12,7 @@ import yaml
 import pandas as pd
 import mesa
 import numpy as np
+import re
 
 # import all the model components
 from agents import HumanAgent, RobotAgent
@@ -166,6 +167,7 @@ def run_simulation(config_path):
     print(f"  saved: {output_dir / 'agent_data.csv'}")
 
     # save task lifecycle data (for task status graph)
+    task_df = None
     if model.completed_tasks:
         print("saving task lifecycle data...")
         rows = []
@@ -178,6 +180,7 @@ def run_simulation(config_path):
                     failed_phase_id = t.resolved_waypoints[phase_idx].get("id")
                 rows.append({
                     'task_id': t.id,
+                    'task_name': t.name,
                     'created_step': t.created_step,
                     'assigned_step': t.assigned_step,
                     'completed_step': t.completed_step,
@@ -205,6 +208,24 @@ def run_simulation(config_path):
         'max_queue_size': model_data['Queue_Size'].max(),
         'avg_critical_battery_rate': model_data['Critical_Battery'].mean(),
     }
+
+    if task_df is not None and not task_df.empty:
+        completed_task_df = task_df[
+            (task_df["status"] == "completed") & task_df["time_in_progress"].notna()
+        ]
+        for task_name, group in completed_task_df.groupby("task_name"):
+            safe_name = re.sub(r"[^a-z0-9]+", "_", str(task_name).lower()).strip("_")
+            if not safe_name:
+                safe_name = "unknown_task"
+
+            duration = group["time_in_progress"]
+            prefix = f"exec_time_{safe_name}"
+            summary[f"{prefix}_count"] = int(duration.count())
+            summary[f"{prefix}_mean"] = float(duration.mean())
+            summary[f"{prefix}_median"] = float(duration.median())
+            summary[f"{prefix}_min"] = float(duration.min())
+            summary[f"{prefix}_max"] = float(duration.max())
+            summary[f"{prefix}_std"] = float(duration.std(ddof=0))
     
     summary_df = pd.DataFrame([summary])
     summary_df.to_csv(output_dir / "summary.csv", index=False)

@@ -1,0 +1,127 @@
+# milan experiment - 3-day lab cleaning scenario
+# 1 human (battery charging) + 1 robot (lab cleaning)
+# task load ramps up each day; robot active 10am–6pm only
+
+simulation:
+  seed: 72
+  # 3 days at 1 step/min: 3 * 24 * 60 = 4320
+  duration: 4320
+
+world:
+  mode: square
+  size: 100
+  boundaries: false
+  charging_station: [0, 0]
+
+humans:
+  human_1:
+    num: 1
+    initial_wealth: 2000
+    schedule: false
+    speed: 2
+    services:
+      - BatteryCharging: { skill: 0.95 }
+
+robots:
+  robot_1:
+    num: 1
+    initial_wealth: 2000
+    initial_battery: 100
+    speed: 1.5
+    random_walk_interval: 5
+    schedule:
+      active_from: "10:00"
+      active_until: "18:00"
+    services:
+      - LabCleaning: { skill: 0.8 }
+
+battery:
+  recharge_rate: 0.167
+  drain_rate: 0.2
+  recharge_trigger: 20
+  min_accept_task: 15
+
+tasks:
+  mode: deterministic
+  proximity_threshold: 0.5
+  deterministic_schedule:
+    # day 1 totals: 5 cleaning + 1 charging
+    - day: 0
+      time: "10:00"
+      counts: { LabCleaning: 2 }
+    - day: 0
+      time: "12:00"
+      counts: { LabCleaning: 1 }
+    - day: 0
+      time: "14:00"
+      counts: { LabCleaning: 1, BatteryCharging: 1 }
+    - day: 0
+      time: "16:00"
+      counts: { LabCleaning: 1 }
+    # day 2 totals: 12 cleaning + 3 charging
+    - day: 1
+      time: "10:00"
+      counts: { LabCleaning: 3 }
+    - day: 1
+      time: "11:30"
+      counts: { LabCleaning: 2, BatteryCharging: 1 }
+    - day: 1
+      time: "13:00"
+      counts: { LabCleaning: 2 }
+    - day: 1
+      time: "14:30"
+      counts: { LabCleaning: 2, BatteryCharging: 1 }
+    - day: 1
+      time: "16:00"
+      counts: { LabCleaning: 3, BatteryCharging: 1 }
+    # day 3 totals: 22 cleaning + 4 charging
+    - day: 2
+      time: "10:00"
+      counts: { LabCleaning: 4, BatteryCharging: 1 }
+    - day: 2
+      time: "11:00"
+      counts: { LabCleaning: 3 }
+    - day: 2
+      time: "12:00"
+      counts: { LabCleaning: 3, BatteryCharging: 1 }
+    - day: 2
+      time: "13:00"
+      counts: { LabCleaning: 3 }
+    - day: 2
+      time: "14:00"
+      counts: { LabCleaning: 3, BatteryCharging: 1 }
+    - day: 2
+      time: "15:00"
+      counts: { LabCleaning: 3 }
+    - day: 2
+      time: "16:00"
+      counts: { LabCleaning: 3, BatteryCharging: 1 }
+
+assignment_policy: random
+
+pricing_model: fixed
+
+services:
+  BatteryCharging:
+    category: maintenance
+    reward: {median: 200, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: station
+          point: { type: charging_station }
+          duration: {mean: 10, sd: 0, min: 10}
+          fail: 0.0
+      in_order: true
+      repeat: 0
+
+  LabCleaning:
+    category: cleaning
+    reward: {median: 100, sigma_g: 0}
+    phases:
+      waypoints:
+        - id: area
+          point: { type: random_in_world }
+          duration: {mean: 20, sd: 8, min: 6}
+          fail: 0.0
+      in_order: true
+      repeat: 0

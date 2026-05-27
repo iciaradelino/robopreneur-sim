@@ -268,28 +268,6 @@ def plot_task_completion_rate(model_data, output_dir):
     print("  saved: task_completion_rate.png")
 
 
-def plot_wealth_growth_rate(model_data, output_dir):
-    """plot wealth growth rate over time"""
-    print("generating wealth growth rate plot...")
-    
-    # calculate growth rate
-    growth_rate = model_data['System_Wealth'].diff().fillna(0)
-    
-    # smooth with rolling average
-    window_size = 20
-    growth_rate_smooth = growth_rate.rolling(window=window_size, center=True).mean()
-    
-    fig, ax = plt.subplots()
-    ax.plot(model_data.index, growth_rate_smooth, linewidth=2, color='green')
-    ax.set_xlabel('step')
-    ax.set_ylabel('wealth growth per step (20-step moving avg)')
-    ax.set_title('system wealth growth rate over time')
-    plt.tight_layout()
-    plt.savefig(output_dir / 'wealth_growth_rate.png', dpi=300)
-    plt.close()
-    print("  saved: wealth_growth_rate.png")
-
-
 def plot_task_status(results_dir):
     """plot average time (steps) each task spends in each state: unassigned, in progress, completed (0)"""
     results_dir = Path(results_dir)
@@ -331,6 +309,61 @@ def plot_task_status(results_dir):
     print("  saved: task_status.png")
 
 
+def plot_task_execution_time_by_type(results_dir):
+    """plot execution time by task type using completed tasks."""
+    results_dir = Path(results_dir)
+    task_data_path = results_dir / "task_data.csv"
+
+    if not task_data_path.exists():
+        print("  skip task_execution_time_by_type: no task_data.csv (re-run simulation to generate)")
+        return
+
+    task_data = pd.read_csv(task_data_path)
+    if task_data.empty:
+        print("  skip task_execution_time_by_type: task_data is empty")
+        return
+
+    # support old files that only had task_id
+    task_label_col = "task_name" if "task_name" in task_data.columns else "task_id"
+    required_cols = {task_label_col, "time_in_progress", "status"}
+    if not required_cols.issubset(task_data.columns):
+        print("  skip task_execution_time_by_type: missing required columns")
+        return
+
+    # completion execution time means assigned -> completed in minutes (1 step = 1 minute)
+    completed = task_data[task_data["status"] == "completed"].copy()
+    completed = completed.dropna(subset=["time_in_progress"])
+    if completed.empty:
+        print("  skip task_execution_time_by_type: no completed tasks found")
+        return
+
+    order = (
+        completed
+        .groupby(task_label_col)["time_in_progress"]
+        .mean()
+        .sort_values(ascending=False)
+        .index
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.boxplot(
+        data=completed,
+        x=task_label_col,
+        y="time_in_progress",
+        order=order,
+        ax=ax,
+        color="#4c78a8",
+    )
+    ax.set_xlabel("task type")
+    ax.set_ylabel("execution time (minutes)")
+    ax.set_title("completion execution time by task type")
+    ax.tick_params(axis='x', rotation=20)
+    plt.tight_layout()
+    plt.savefig(results_dir / "task_execution_time_by_type.png", dpi=300)
+    plt.close()
+    print("  saved: task_execution_time_by_type.png")
+
+
 def generate_all_plots(results_dir):
     """generate all plots for a given experiment"""
     results_dir = Path(results_dir)
@@ -349,8 +382,8 @@ def generate_all_plots(results_dir):
     plot_wealth_distribution(agent_data, results_dir)
     plot_wealth_boxplot(agent_data, results_dir)
     plot_task_completion_rate(model_data, results_dir)
-    plot_wealth_growth_rate(model_data, results_dir)
     plot_task_status(results_dir)
+    plot_task_execution_time_by_type(results_dir)
     
     print(f"\nall plots saved to: {results_dir}")
 

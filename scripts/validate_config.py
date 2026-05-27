@@ -5,6 +5,7 @@
 import sys
 import os
 from pathlib import Path
+import re
 
 import yaml
 
@@ -32,6 +33,26 @@ def is_positive_number(v):
 
 def is_fraction(v):
     return is_number(v) and 0.0 <= v <= 1.0
+
+
+def is_hhmm(v):
+    if not isinstance(v, str):
+        return False
+    if not re.match(r"^\d{2}:\d{2}$", v):
+        return False
+    hour = int(v[:2])
+    minute = int(v[3:])
+    return 0 <= hour <= 23 and 0 <= minute <= 59
+
+
+def validate_schedule_field(schedule_value, path):
+    if schedule_value is False or schedule_value is None:
+        return
+    if check(isinstance(schedule_value, dict), f"{path}.schedule: must be false or a mapping"):
+        check(is_hhmm(schedule_value.get("active_from")),
+              f"{path}.schedule.active_from: must be HH:MM in 24h format")
+        check(is_hhmm(schedule_value.get("active_until")),
+              f"{path}.schedule.active_until: must be HH:MM in 24h format")
 
 
 # ── section validators ────────────────────────────────────────────────────────
@@ -152,8 +173,7 @@ def validate_humans(cfg, known_services):
               f"{path}.num: must be a positive integer")
         check(is_number(h.get("initial_wealth")),
               f"{path}.initial_wealth: must be a number")
-        check(isinstance(h.get("schedule"), bool),
-              f"{path}.schedule: must be a boolean")
+        validate_schedule_field(h.get("schedule"), path)
         check(is_positive_number(h.get("speed")), f"{path}.speed: must be a positive number")
         validate_agent_services(h.get("services"), path, known_services)
 
@@ -172,6 +192,7 @@ def validate_robots(cfg, known_services):
         ib = r.get("initial_battery")
         check(is_number(ib) and 0 < ib <= 100,
               f"{path}.initial_battery: must be a number between 0 and 100")
+        validate_schedule_field(r.get("schedule"), path)
         check(is_positive_number(r.get("speed")), f"{path}.speed: must be a positive number")
         check(isinstance(r.get("random_walk_interval"), int) and r.get("random_walk_interval", 0) > 0,
               f"{path}.random_walk_interval: must be a positive integer")
@@ -186,13 +207,43 @@ def validate_battery(cfg):
         check(is_positive_number(b.get(key)), f"battery.{key}: must be a positive number")
 
 
-def validate_tasks(cfg):
+def validate_tasks(cfg, known_services):
     t = cfg.get("tasks")
     if not check(isinstance(t, dict), "tasks: section missing or not a mapping"):
         return
-    check(is_positive_number(t.get("arrival_rate")), "tasks.arrival_rate: must be a positive number")
     check(is_positive_number(t.get("proximity_threshold")),
           "tasks.proximity_threshold: must be a positive number")
+    mode = t.get("mode", "random")
+    check(mode in {"random", "deterministic"},
+          "tasks.mode: must be either 'random' or 'deterministic'")
+    if mode == "random":
+        check(is_positive_number(t.get("arrival_rate")), "tasks.arrival_rate: must be a positive number")
+        return
+
+    deterministic_schedule = t.get("deterministic_schedule")
+    if not check(isinstance(deterministic_schedule, list) and len(deterministic_schedule) > 0,
+                 "tasks.deterministic_schedule: must be a non-empty list in deterministic mode"):
+        return
+
+    for idx, entry in enumerate(deterministic_schedule):
+        path = f"tasks.deterministic_schedule[{idx}]"
+        if not check(isinstance(entry, dict), f"{path}: must be a mapping"):
+            continue
+        check(isinstance(entry.get("day"), int) and entry.get("day") >= 0,
+              f"{path}.day: must be a non-negative integer")
+        check(is_hhmm(entry.get("time")),
+              f"{path}.time: must be HH:MM in 24h format")
+        counts = entry.get("counts")
+        if check(isinstance(counts, dict) and len(counts) > 0,
+                 f"{path}.counts: must be a non-empty mapping"):
+            for service_name, count in counts.items():
+                check(isinstance(service_name, str) and service_name,
+                      f"{path}.counts: all keys must be non-empty strings")
+                if known_services:
+                    check(service_name in known_services,
+                          f"{path}.counts.{service_name}: service is not defined in services section")
+                check(isinstance(count, int) and count > 0,
+                      f"{path}.counts.{service_name}: must be a positive integer")
 
 
 def validate_top_level_scalars(cfg):
@@ -243,7 +294,7 @@ def validate(config_path: str) -> bool:
     validate_simulation(cfg)
     validate_world(cfg)
     validate_battery(cfg)
-    validate_tasks(cfg)
+    validate_tasks(cfg, known_services)
     validate_top_level_scalars(cfg)
     validate_humans(cfg, known_services)
     validate_robots(cfg, known_services)

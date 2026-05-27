@@ -3,55 +3,104 @@
 from agents import RobotAgent
 from tasks import Task
 from utils import build_execution_details
+from schedule import current_day, minute_of_day, parse_hhmm, minutes_per_day
 
-def generate_tasks(model):
-    """generate tasks based on arrival rate and add them to the task queue using poisson"""
+# add all the details to the task
+def _create_task(model, service_name):
+    """create and enqueue a single task for the given service."""
+    service_config = model.services_config[service_name]
+    assigner_agent = model.random.choice(list(model.agents))
 
-    arrival_rate = model.tasks_config['arrival_rate']  # tasks per hour
-    steps_per_hour = 60  # 1 step = 1 minute
-    tasks_per_step = arrival_rate / steps_per_hour
-    num_tasks = model.random.poisson(tasks_per_step)
-    
-    # get available service names from agents (only services that agents can actually perform)
+    # build execution details first so we can use the first waypoint as location
+    execution_details = build_execution_details(service_config, model)
+    first_point = execution_details["resolved_waypoints"][0]["point"]
+
+    # create task without reward, time, or completion probability (set when assigned)
+    task = Task(
+        task_id=model.task_counter,
+        name=service_name,
+        category=service_config['category'],
+        location=first_point,
+        assigner_id=assigner_agent.agent_id
+    )
+
+    task.execution_details = execution_details
+    task.resolved_waypoints = execution_details["resolved_waypoints"]
+    task.phase_index = execution_details["phase_index"]
+    task.phase_remaining_time = execution_details["phase_remaining_time"]
+    task.time = execution_details["total_duration"]
+    task.remaining_time = task.time
+
+    # lifecycle: record creation step
+    task.created_step = model.steps
+    model.task_queue.append(task)
+    model.task_counter += 1
+
+# available services for random generation
+def _random_services(model):
+    """services available for random generation."""
     available_services = set()
     for agent in model.agents:
         for service in agent.services:
             if service.name != "BatteryCharging":
                 available_services.add(service.name)
-    available_services = list(available_services)
-    
+    return list(available_services)
+
+# dictionary of tasks by absolute step
+def _build_deterministic_index(model):
+    """precompute deterministic task schedule keyed by absolute step."""
+    if hasattr(model, "_deterministic_task_index"):
+        return model._deterministic_task_index
+
+    index = {}
+    for entry in model.tasks_config.get("deterministic_schedule", []):
+        day = entry["day"]
+        minute = parse_hhmm(entry["time"])
+        abs_step = day * minutes_per_day() + minute
+
+        if abs_step not in index:
+            index[abs_step] = {}
+
+        for service_name, count in entry["counts"].items():
+            index[abs_step][service_name] = index[abs_step].get(service_name, 0) + int(count)
+
+    model._deterministic_task_index = index
+    return index
+
+# random task arrival schedule
+def _generate_random_tasks(model):
+    """random mode: poisson arrivals from executable services."""
+    arrival_rate = model.tasks_config['arrival_rate']  # tasks per hour
+    steps_per_hour = 60  # 1 step = 1 minute
+    tasks_per_step = arrival_rate / steps_per_hour
+    num_tasks = model.random.poisson(tasks_per_step)
+
+    available_services = _random_services(model)
+    if not available_services:
+        return
+
     for _ in range(num_tasks):
-        # randomly select an agent to request this task
-        assigner_agent = model.random.choice(list(model.agents))
-        
-        # randomly select a service type
         service_name = model.random.choice(available_services)
-        service_config = model.services_config[service_name]
+        _create_task(model, service_name)
 
-        # build execution details first so we can use the first waypoint as location
-        execution_details = build_execution_details(service_config, model)
-        first_point = execution_details["resolved_waypoints"][0]["point"]
+# fixed task arrival schedule
+def _generate_deterministic_tasks(model):
+    """deterministic mode: inject exact counts at exact day+time."""
+    current_step = current_day(model) * 1440 + minute_of_day(model)
+    task_index = _build_deterministic_index(model)
+    counts = task_index.get(current_step, {})
+    for service_name, count in counts.items():
+        for _ in range(int(count)):
+            _create_task(model, service_name)
 
-        # create task without reward, time, or completion probability (set when assigned)
-        task = Task(
-            task_id=model.task_counter,
-            name=service_name,
-            category=service_config['category'],
-            location=first_point,
-            assigner_id=assigner_agent.agent_id
-        )
-
-        task.execution_details = execution_details
-        task.resolved_waypoints = execution_details["resolved_waypoints"]
-        task.phase_index = execution_details["phase_index"]
-        task.phase_remaining_time = execution_details["phase_remaining_time"]
-        task.time = execution_details["total_duration"]
-        task.remaining_time = task.time
-        
-        # lifecycle: record creation step
-        task.created_step = model.steps
-        model.task_queue.append(task)
-        model.task_counter += 1
+# depends on task mode
+def generate_tasks(model):
+    """generate tasks according to tasks.mode."""
+    mode = model.tasks_config.get("mode", "random")
+    if mode == "deterministic":
+        _generate_deterministic_tasks(model)
+        return
+    _generate_random_tasks(model)
 
 # find the available agents for a given task
 def _get_eligible_agents(model, task):
@@ -64,6 +113,9 @@ def _get_eligible_agents(model, task):
     eligible_agents = []
     
     for agent in model.agents:
+        if agent.status == "inactive":
+            continue
+
         # check if agent is idle
         if agent.status != "idle":
             continue
