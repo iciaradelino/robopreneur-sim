@@ -6,8 +6,8 @@ simulation:
 
 world:
   mode: floor_plan # square (default) or floor_plan
-  size: 100 # 100x100 continuous space
-  boundaries: false # no wrap around, how to do this?
+  size: 100 # 100x100 continuous space (used in square mode)
+  boundaries: false # torus wrap-around: false = hard walls, true = wrap around edges
   charging_station: [0, 0]
   floor_plan:
     exterior:
@@ -26,7 +26,7 @@ humans:
   human_1:
     num: 1
     initial_wealth: 2000 # IEC
-    schedule: false # not implemented yet
+    schedule: false # false = always active, or {active_from: "HH:MM", active_until: "HH:MM"}
     speed: 2 # units/min
     services: 
       - BatteryCharging: { skill: 0.95}
@@ -36,11 +36,10 @@ humans:
       - SystemUpdate: { skill: 0.95 }
       - FunctionalityTest: { skill: 0.95 }
 
-
   human_2:
     num: 1
     initial_wealth: 2000 # IEC
-    schedule: false # not implemented yet
+    schedule: false # false = always active, or {active_from: "HH:MM", active_until: "HH:MM"}
     speed: 2 # units/min
     services: 
       - BatteryCharging: { skill: 0.95}
@@ -85,10 +84,6 @@ tasks:
   arrival_rate: 6 # tasks/hour
   proximity_threshold: 0.5 # units to consider at location
 
-assignment_policy: random
-
-pricing_model: fixed
-
 services:
   BatteryCharging:
     category: maintenance
@@ -99,8 +94,6 @@ services:
           point: { type: charging_station }
           duration: {mean: 10, sd: 0, min: 10} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0
 
   PowerSupply:
     category: maintenance
@@ -111,8 +104,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 10, sd: 0, min: 10} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0
 
   ComponentRestock:
     category: maintenance
@@ -123,12 +114,9 @@ services:
           point: { type: random_in_world }
           duration: {mean: 10, sd: 0, min: 10} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0
 
   SystemUpdate:
     category: maintenance
-    performed_by: # agent ids here TODO
     reward: {median: 120, sigma_g: 0}
     phases:
       waypoints:
@@ -136,8 +124,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 10, sd: 0, min: 10} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0
 
   FunctionalityTest:
     category: maintenance
@@ -148,8 +134,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 10, sd: 0, min: 10} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0
     
   LabCleaning:
     category: cleaning
@@ -160,8 +144,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 20, sd: 8, min: 6} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0
     
   ItemTransport:
     category: transport
@@ -176,8 +158,6 @@ services:
           point: { type: random_in_world }
           duration: 10
           fail: 0.01
-      in_order: true
-      repeat: 0
     
   SurveillancePatrol:
     category: security
@@ -188,5 +168,3 @@ services:
           point: { type: random_in_world }
           duration: {mean: 30, sd: 10, min: 10} # in steps
           fail: 0.0
-      in_order: true
-      repeat: 0

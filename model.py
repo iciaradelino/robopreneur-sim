@@ -5,24 +5,26 @@ from agents import HumanAgent, RobotAgent
 from metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
 from task_assignation import generate_tasks, assign_tasks
 from floor_plan import FloorPlan
-
-# load the config from the config.yaml file
-from load_config import sim_config, world_config, humans_config, robots_config, battery_config, tasks_config, assignment_policy_config, pricing_model_config, services_config
+from load_config import load_config
 
 class RobopreneurModel(mesa.Model):
-    def __init__(self):
+    def __init__(self, config=None):
         super().__init__()
 
-        # store config references for compatibility with dynamic loading
-        self.sim_config = sim_config
-        self.world_config = world_config
-        self.humans_config = humans_config
-        self.robots_config = robots_config
-        self.battery_config = battery_config
-        self.tasks_config = tasks_config
-        self.services_config = services_config
+        # single source of truth: a config dict drives the whole model.
+        # when none is passed (e.g. the solara app) we fall back to config.yaml.
+        if config is None:
+            config = load_config()
+        self.config = config
+        self.sim_config = config['simulation']
+        self.world_config = config['world']
+        self.humans_config = config['humans']
+        self.robots_config = config['robots']
+        self.battery_config = config['battery']
+        self.tasks_config = config['tasks']
+        self.services_config = config['services']
         self.completed_tasks = []
-        self.random = np.random.default_rng(sim_config['seed'])
+        self.random = np.random.default_rng(self.sim_config['seed'])
         self.world_mode = self.world_config.get("mode", "square")
 
         self.floor_plan = None
@@ -40,9 +42,9 @@ class RobopreneurModel(mesa.Model):
             )
         else:
             self.space = mesa.space.ContinuousSpace(
-                world_config['size'],
-                world_config['size'],
-                torus=world_config['boundaries']
+                self.world_config['size'],
+                self.world_config['size'],
+                torus=self.world_config['boundaries']
             )
 
         self.datacollector = mesa.DataCollector(
@@ -72,7 +74,7 @@ class RobopreneurModel(mesa.Model):
 
     def initialize_agents(self):
         # create num agents for each human type
-        for human_type, human_config in humans_config.items():
+        for human_type, human_config in self.humans_config.items():
             num_agents = human_config.get('num', 1)
             for i in range(num_agents):
                 # create unique agent id for each instance
@@ -81,11 +83,10 @@ class RobopreneurModel(mesa.Model):
                 human = HumanAgent(self, agent_id, human_config)
                 pos = self._random_world_position()
                 self.space.place_agent(human, pos)
-                human.location = pos
                 human.target_location = pos
 
         # create num agents for each robot type
-        for robot_type, robot_config in robots_config.items():
+        for robot_type, robot_config in self.robots_config.items():
             num_agents = robot_config.get('num', 1)
             for i in range(num_agents):
                 # create unique agent id for each instance
@@ -94,15 +95,14 @@ class RobopreneurModel(mesa.Model):
                 robot = RobotAgent(self, agent_id, robot_config)
                 pos = self._random_world_position()
                 self.space.place_agent(robot, pos)
-                robot.location = pos
                 robot.target_location = pos
 
     def _random_world_position(self):
         if self.floor_plan:
             return self.floor_plan.random_point(self.random)
         return (
-            self.random.random() * world_config['size'],
-            self.random.random() * world_config['size'],
+            self.random.random() * self.world_config['size'],
+            self.random.random() * self.world_config['size'],
         )
 
     def step(self):
@@ -127,5 +127,5 @@ class RobopreneurModel(mesa.Model):
 
         # check if simulation should stop 
         # (self.steps is auto-incremented by mesa)
-        if self.steps >= sim_config['duration']:
+        if self.steps >= self.sim_config['duration']:
             self.running = False

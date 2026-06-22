@@ -97,10 +97,6 @@ tasks:
       time: "16:00"
       counts: { LabCleaning: 3, BatteryCharging: 1 }
 
-assignment_policy: random
-
-pricing_model: fixed
-
 services:
   BatteryCharging:
     category: maintenance
@@ -111,8 +107,6 @@ services:
           point: { type: charging_station }
           duration: {mean: 10, sd: 0, min: 10}
           fail: 0.0
-      in_order: true
-      repeat: 0
 
   LabCleaning:
     category: cleaning
@@ -123,5 +117,3 @@ services:
           point: { type: random_in_world }
           duration: {mean: 20, sd: 8, min: 6}
           fail: 0.0
-      in_order: true
-      repeat: 0

@@ -2,7 +2,7 @@
 
 from agents import RobotAgent
 from tasks import Task
-from utils import build_execution_details
+from utils import build_execution_details, sample_reward
 from schedule import current_day, minute_of_day, parse_hhmm, minutes_per_day
 
 # add all the details to the task
@@ -13,6 +13,7 @@ def _create_task(model, service_name):
 
     # build execution details first so we can use the first waypoint as location
     execution_details = build_execution_details(service_config, model)
+    # skip services with no phases/waypoints - there is nothing to execute
     if execution_details is None or not execution_details["resolved_waypoints"]:
         return
     first_point = execution_details["resolved_waypoints"][0]["point"]
@@ -88,7 +89,7 @@ def _generate_random_tasks(model):
 # fixed task arrival schedule
 def _generate_deterministic_tasks(model):
     """deterministic mode: inject exact counts at exact day+time."""
-    current_step = current_day(model) * 1440 + minute_of_day(model)
+    current_step = current_day(model) * minutes_per_day() + minute_of_day(model)
     task_index = _build_deterministic_index(model)
     counts = task_index.get(current_step, {})
     for service_name, count in counts.items():
@@ -121,6 +122,14 @@ def _get_eligible_agents(model, task):
         # check if agent is idle
         if agent.status != "idle":
             continue
+
+        # an agent cannot perform a task it requested itself
+        if agent.agent_id == task.assigner_id:
+            continue
+
+        # a robot waiting for / undergoing a recharge must not pick up new work
+        if isinstance(agent, RobotAgent) and agent.awaiting_recharge:
+            continue
         
         # check if agent has capability (service matching task name)
         has_capability = False
@@ -149,8 +158,7 @@ def _assign_task_to_agent(model, task, agent):
     sets task reward, time, and completion probability from the agent's service
     """
     # find the agent's service matching this task
-    # this is kind of inefficient, maybe find a better way to do this
-    # we know the agent has this service because they were filtered in _get_eligible_agents
+    # (the agent is guaranteed to have it - they passed _get_eligible_agents)
     agent_service = None
     for service in agent.services:
         if service.name == task.name:
@@ -161,22 +169,22 @@ def _assign_task_to_agent(model, task, agent):
     agent.status = "exec"
     agent.current_task = task
 
-    # reset phase state so re-assigned tasks always start from the beginning
-    task.phase_index = 0
-    task.phase_remaining_time = task.resolved_waypoints[0].get("duration", 0) if task.resolved_waypoints else 0
-    task.time = task.execution_details["total_duration"]
-    task.remaining_time = task.time
-
     # update agent target location to first waypoint
-    agent.target_location = task.resolved_waypoints[0]["point"]
+    agent.target_location = task.resolved_waypoints[task.phase_index]["point"]
+    
+    # sample the reward per task (not per agent) so the configured reward
+    # distribution produces variation across individual tasks
+    reward_config = model.services_config[task.name]['reward']
+    task.reward = sample_reward(reward_config, model.random)
 
-    # update reward (we should explore more complex reward systems)
-    task.reward = agent_service.reward
+    # update total task duration from phase execution details
+    task.time = task.execution_details["total_duration"]
 
     # store agent's skill on the task for use in failure probability calculation
     task.agent_skill = agent_service.skill
     task.status = "in_progress"
     task.assignee_id = agent.agent_id
+    task.remaining_time = task.time if task.time is not None else 0
     # lifecycle: record assignment step
     task.assigned_step = model.steps
 

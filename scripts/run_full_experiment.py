@@ -16,7 +16,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("usage: python scripts/run_full_experiment.py <path_to_config.yaml>")
         print("\nexample:")
-        print("  python scripts/run_full_experiment.py experiments/exp-01-battery/scenario-a/config.yaml")
+        print("  python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml")
         sys.exit(1)
     
     config_path = sys.argv[1]

@@ -1,6 +1,6 @@
 # battery management logic
 
-from tasks import Task
+from tasks import Task, requeue_task
 from movement import check_if_at_location
 from utils import build_execution_details
 
@@ -48,7 +48,6 @@ def generate_recharge_task(model, robot):
     # store reference to this task in the robot
     robot.recharge_task = task
 
-# complicated logic on this fucntion, double check 
 def update_battery(robot):
     battery_config = robot.model.battery_config
     station = tuple(robot.model.world_config['charging_station'])
@@ -61,7 +60,6 @@ def update_battery(robot):
     if robot.recharge_task is not None and robot.recharge_task.resolved_waypoints:
         station = robot.recharge_task.resolved_waypoints[0]["point"]
 
-    # 
     if robot.awaiting_recharge:
         # latch: check once per step if the human has arrived and plugged in
         if not robot.is_charging and robot.recharge_task is not None:
@@ -69,6 +67,7 @@ def update_battery(robot):
             human = next((a for a in robot.model.agents if a.agent_id == assignee_id), None) if assignee_id else None
             if human is not None and check_if_at_location(robot, station) and check_if_at_location(human, station):
                 robot.is_charging = True
+                robot.recharge_wait = 0
 
         if robot.is_charging:
             # charge continuously until full - human can leave, robot stays plugged in
@@ -78,15 +77,34 @@ def update_battery(robot):
                 robot.awaiting_recharge = False
                 robot.is_charging = False
                 robot.recharge_task = None
+                robot.recharge_wait = 0
         else:
             # still traveling to station or waiting for human - battery keeps draining
             robot.battery = max(robot.battery - battery_config['drain_rate'], 0)
+            # only count waiting time once we have actually arrived at the station;
+            # if the assigned human never plugs us in within the timeout, re-request
+            # help so a (possibly different) human can be dispatched - we never wait forever
+            if check_if_at_location(robot, station):
+                robot.recharge_wait += 1
+                max_wait = battery_config.get('recharge_max_wait', 120)
+                if robot.recharge_wait >= max_wait:
+                    generate_recharge_task(robot.model, robot)
+                    robot.recharge_wait = 0
+            else:
+                robot.recharge_wait = 0
 
     else:
         # normal operation - drain and trigger recharge request if threshold is hit
         robot.battery = max(robot.battery - battery_config['drain_rate'], 0)
         if robot.battery <= battery_config['recharge_trigger']:
+            # release any in-progress task back to the queue before recharging,
+            # same as a schedule interruption, so it is never silently lost
+            if robot.current_task is not None:
+                requeue_task(robot.model, robot.current_task)
+                robot.current_task = None
             generate_recharge_task(robot.model, robot)
             robot.awaiting_recharge = True
+            robot.is_charging = False
+            robot.recharge_wait = 0
             robot.status = "busy"
             robot.target_location = station

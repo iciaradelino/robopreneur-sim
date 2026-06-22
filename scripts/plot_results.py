@@ -87,7 +87,7 @@ def plot_battery_metrics(model_data, agent_data, output_dir):
     ax.plot(model_data.index, model_data['Critical_Battery'], linewidth=2, color='red')
     ax.set_xlabel('step')
     ax.set_ylabel('critical battery rate')
-    ax.set_title('percentage of robots with critical battery (<20%)')
+    ax.set_title('percentage of robots with critical battery (below recharge trigger)')
     ax.set_ylim(0, 1)
     plt.tight_layout()
     plt.savefig(output_dir / 'critical_battery_over_time.png', dpi=300)

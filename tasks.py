@@ -1,6 +1,15 @@
 # this is for when the task is created by someone 
 # and then assigned to an agent
 
+# shared helper so schedule interruptions and recharge interruptions
+# release a task back to the queue in exactly the same way
+def requeue_task(model, task):
+    """return an interrupted task to the queue so it can be reassigned later."""
+    task.status = "pending"
+    task.assignee_id = None
+    model.task_queue.append(task)
+
+
 class Task:
     def __init__(self, task_id, name, category, location, reward=None, time=None, agent_skill=None, assigner_id=None):
         self.id = task_id

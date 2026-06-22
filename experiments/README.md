@@ -2,9 +2,14 @@
 
 This folder contains systematic experiments to validate the simulator's correctness and behavior.
 
-## Experiment Structure
+## Folder Layout
 
-Each experiment has:
+Experiments are grouped by world type:
+- **`no_map/`** — square continuous world (`world.mode: square`)
+- **`floor_plan/`** — polygon world with obstacles and jupedsim routing (`world.mode: floor_plan`)
+- **`milan/`** — standalone 3-day scenario combining agent schedules and a deterministic task schedule
+
+Each experiment (e.g. `no_map/exp-01-battery/`) has:
 - **EXPERIMENT_CARD.md**: Detailed description, expectations, and results tracking
 - **scenario-a/**, **scenario-b/**, **scenario-c/**: Individual scenario configurations and results
 
@@ -35,18 +40,21 @@ Each experiment has:
 python scripts/run_full_experiment.py <path_to_config.yaml>
 ```
 
-**Examples:**
+**Examples** (swap `no_map` for `floor_plan` to run the obstacle-world variant):
 ```bash
 # experiment 1, scenario a
-python scripts/run_full_experiment.py experiments/exp-01-battery/scenario-a/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
 
 # experiment 2, scenario c
-python scripts/run_full_experiment.py experiments/exp-02-taskload/scenario-c/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-02-taskload/scenario-c/config.yaml
 
-# experiment 3, scenario b
-python scripts/run_full_experiment.py experiments/exp-03-competition/scenario-a/config.yaml
-python scripts/run_full_experiment.py experiments/exp-03-competition/scenario-b/config.yaml
-python scripts/run_full_experiment.py experiments/exp-03-competition/scenario-c/config.yaml
+# experiment 3, all scenarios
+python scripts/run_full_experiment.py experiments/no_map/exp-03-competition/scenario-a/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-03-competition/scenario-b/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-03-competition/scenario-c/config.yaml
+
+# standalone milan scenario
+python scripts/run_full_experiment.py experiments/milan/config.yaml
 ```
 
 ### Option 2: Run Simulation Only
@@ -62,7 +70,7 @@ python scripts/plot_results.py <path_to_results_directory>
 ## Remove all output for an experiment
 
 ```bash
-rm experiments/exp-01-battery/scenario-a/*.csv experiments/exp-01-battery/scenario-a/*.png experiments/exp-01-battery/scenario-b/*.csv experiments/exp-01-battery/scenario-b/*.png experiments/exp-01-battery/scenario-c/*.csv experiments/exp-01-battery/scenario-c/*.png
+rm experiments/no_map/exp-01-battery/scenario-*/*.csv experiments/no_map/exp-01-battery/scenario-*/*.png
 ```
 
 ## Output Files
@@ -95,20 +103,20 @@ After running an experiment, each scenario folder will contain:
 To run a complete experiment (all 3 scenarios):
 
 ```bash
-# experiment 1
-python scripts/run_full_experiment.py experiments/exp-01-battery/scenario-a/config.yaml
-python scripts/run_full_experiment.py experiments/exp-01-battery/scenario-b/config.yaml
-python scripts/run_full_experiment.py experiments/exp-01-battery/scenario-c/config.yaml
+# experiment 1 (square world; use floor_plan/ for the obstacle variant)
+python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-b/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-c/config.yaml
 
 # experiment 2
-python scripts/run_full_experiment.py experiments/exp-02-taskload/scenario-a/config.yaml
-python scripts/run_full_experiment.py experiments/exp-02-taskload/scenario-b/config.yaml
-python scripts/run_full_experiment.py experiments/exp-02-taskload/scenario-c/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-02-taskload/scenario-a/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-02-taskload/scenario-b/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-02-taskload/scenario-c/config.yaml
 
 # experiment 3
-python scripts/run_full_experiment.py experiments/exp-03-competition/scenario-a/config.yaml
-python scripts/run_full_experiment.py experiments/exp-03-competition/scenario-b/config.yaml
-python scripts/run_full_experiment.py experiments/exp-03-competition/scenario-c/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-03-competition/scenario-a/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-03-competition/scenario-b/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-03-competition/scenario-c/config.yaml
 ```
 
 ## Analyzing Results

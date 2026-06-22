@@ -66,17 +66,46 @@ def validate_simulation(cfg):
           "simulation.duration: must be a positive integer")
 
 
+def _is_point(p):
+    return isinstance(p, (list, tuple)) and len(p) == 2 and all(is_number(v) for v in p)
+
+
+def _is_ring(ring):
+    return isinstance(ring, list) and len(ring) >= 3 and all(_is_point(p) for p in ring)
+
+
+def validate_floor_plan(world):
+    fp = world.get("floor_plan")
+    if not check(isinstance(fp, dict), "world.floor_plan: required mapping when mode is 'floor_plan'"):
+        return
+    check(_is_ring(fp.get("exterior")),
+          "world.floor_plan.exterior: must be a list of at least 3 [x, y] points")
+    holes = fp.get("holes", [])
+    if holes:
+        if check(isinstance(holes, list), "world.floor_plan.holes: must be a list of rings"):
+            for i, ring in enumerate(holes):
+                check(_is_ring(ring),
+                      f"world.floor_plan.holes[{i}]: must be a list of at least 3 [x, y] points")
+
+
 def validate_world(cfg):
     w = cfg.get("world")
     if not check(isinstance(w, dict), "world: section missing or not a mapping"):
         return
-    check(is_positive_number(w.get("size")), "world.size: must be a positive number")
-    check(isinstance(w.get("boundaries"), bool), "world.boundaries: must be a boolean")
+    mode = w.get("mode", "square")
+    check(mode in {"square", "floor_plan"},
+          "world.mode: must be either 'square' or 'floor_plan'")
     cs = w.get("charging_station")
     check(
         isinstance(cs, list) and len(cs) == 2 and all(is_number(v) for v in cs),
         "world.charging_station: must be a list of two numbers, e.g. [50, 50]",
     )
+    if mode == "floor_plan":
+        validate_floor_plan(w)
+    else:
+        # size and boundaries only matter in square mode
+        check(is_positive_number(w.get("size")), "world.size: must be a positive number")
+        check(isinstance(w.get("boundaries"), bool), "world.boundaries: must be a boolean")
 
 
 def validate_duration_field(duration, path):
@@ -202,6 +231,14 @@ def validate_battery(cfg):
         return
     for key in ("recharge_rate", "drain_rate", "recharge_trigger", "min_accept_task"):
         check(is_positive_number(b.get(key)), f"battery.{key}: must be a positive number")
+    # battery levels are percentages, so these thresholds should not exceed 100
+    for key in ("recharge_trigger", "min_accept_task"):
+        if is_number(b.get(key)) and b.get(key) > 100:
+            warn(f"battery.{key}: {b.get(key)} is above 100 (battery is a 0-100 percentage)")
+    # optional: max steps a robot waits at the station before re-requesting help
+    if "recharge_max_wait" in b:
+        check(is_positive_number(b.get("recharge_max_wait")),
+              "battery.recharge_max_wait: must be a positive number")
 
 
 def validate_tasks(cfg, known_services):
@@ -243,20 +280,9 @@ def validate_tasks(cfg, known_services):
                       f"{path}.counts.{service_name}: must be a positive integer")
 
 
-def validate_top_level_scalars(cfg):
-    valid_policies = {"random"}
-    valid_pricing = {"fixed"}
-    ap = cfg.get("assignment_policy")
-    check(ap in valid_policies,
-          f"assignment_policy: '{ap}' is not valid, expected one of {sorted(valid_policies)}")
-    pm = cfg.get("pricing_model")
-    check(pm in valid_pricing,
-          f"pricing_model: '{pm}' is not valid, expected one of {sorted(valid_pricing)}")
-
-
 def validate_required_top_level_keys(cfg):
     required = {"simulation", "world", "humans", "robots", "battery",
-                "tasks", "assignment_policy", "pricing_model", "services"}
+                "tasks", "services"}
     missing = required - set(cfg.keys())
     if missing:
         for k in sorted(missing):
@@ -292,7 +318,6 @@ def validate(config_path: str) -> bool:
     validate_world(cfg)
     validate_battery(cfg)
     validate_tasks(cfg, known_services)
-    validate_top_level_scalars(cfg)
     validate_humans(cfg, known_services)
     validate_robots(cfg, known_services)
 
@@ -303,7 +328,7 @@ def main():
     if len(sys.argv) < 2:
         print("usage: python scripts/validate_config.py <path_to_config.yaml>")
         print("\nexample:")
-        print("  python scripts/validate_config.py experiments/exp-00/scenario-a/config.yaml")
+        print("  python scripts/validate_config.py experiments/no_map/exp-01-battery/scenario-a/config.yaml")
         sys.exit(1)
 
     config_path = sys.argv[1]

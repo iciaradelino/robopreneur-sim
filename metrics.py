@@ -40,10 +40,12 @@ def compute_task_queue_size(model):
 
 def compute_critical_battery_rate(model):
     """
-    compute the percentage of robots with critically low battery (<20%).
+    compute the fraction of robots with critically low battery.
+    the threshold tracks the experiment's recharge_trigger instead of a hardcoded value.
     """
     robots = [agent for agent in model.agents if hasattr(agent, 'battery')]
     if not robots:
         return 0
-    critical_count = sum(1 for robot in robots if robot.battery < 20)
+    threshold = model.battery_config.get('recharge_trigger', 20)
+    critical_count = sum(1 for robot in robots if robot.battery < threshold)
     return critical_count / len(robots)

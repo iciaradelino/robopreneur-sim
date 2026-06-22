@@ -1,3 +1,4 @@
+import warnings
 from math import hypot
 
 from shapely import affinity
@@ -24,6 +25,8 @@ class FloorPlan:
         )
         self.width = max_x - min_x
         self.height = max_y - min_y
+        # warn only once if we ever fall back to straight-line navigation
+        self._warned_straight_line = False
         self._routing_engine = self._build_routing_engine()
 
     def normalize_point(self, point):
@@ -46,7 +49,22 @@ class FloorPlan:
         path = self._route_with_engine(snapped_start, snapped_end)
         if path:
             return path
+        # routing produced nothing: fall back to a straight line, but make the
+        # degraded navigation visible instead of failing silently
+        self._warn_straight_line()
         return [snapped_end]
+
+    def _warn_straight_line(self):
+        if self._warned_straight_line:
+            return
+        self._warned_straight_line = True
+        warnings.warn(
+            "floor_plan routing unavailable; falling back to straight-line "
+            "navigation, which may cross holes/obstacles. check the jupedsim "
+            "install and the floor plan geometry.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     def _build_routing_engine(self):
         try:
@@ -61,11 +79,21 @@ class FloorPlan:
             lambda: jps.RoutingEngine(geometry=self.geometry),
             lambda: jps.RoutingEngine(polygon=self.geometry),
         ]
+        last_error = None
         for builder in builders:
             try:
                 return builder()
-            except Exception:
+            except Exception as exc:
+                last_error = exc
                 continue
+        # none of the constructor signatures worked: surface it so the caller
+        # knows navigation will degrade to straight lines
+        warnings.warn(
+            f"could not initialize jupedsim routing engine ({last_error!r}); "
+            "navigation will fall back to straight lines.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return None
 
     def _route_with_engine(self, start, end):

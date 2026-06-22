@@ -85,10 +85,6 @@ tasks:
   arrival_rate: 15  # VARIABLE: high load, over-saturated
   proximity_threshold: 0.5
 
-assignment_policy: random
-
-pricing_model: fixed
-
 services:
   BatteryCharging:
     category: maintenance
@@ -99,8 +95,6 @@ services:
           point: { type: charging_station }
           duration: {mean: 30, sd: 5, min: 15}
           fail: 0.0
-      in_order: true
-      repeat: 0
 
   PowerSupply:
     category: maintenance
@@ -111,8 +105,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 25, sd: 5, min: 10}
           fail: 0.05
-      in_order: true
-      repeat: 0
 
   ComponentRestock:
     category: maintenance
@@ -123,8 +115,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 30, sd: 8, min: 10}
           fail: 0.08
-      in_order: true
-      repeat: 0
 
   SystemUpdate:
     category: maintenance
@@ -135,8 +125,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 40, sd: 10, min: 15}
           fail: 0.10
-      in_order: true
-      repeat: 0
 
   FunctionalityTest:
     category: maintenance
@@ -147,8 +135,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 35, sd: 8, min: 12}
           fail: 0.12
-      in_order: true
-      repeat: 0
 
   LabCleaning:
     category: cleaning
@@ -159,8 +145,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 45, sd: 12, min: 15}
           fail: 0.08
-      in_order: true
-      repeat: 0
 
   ItemTransport:
     category: transport
@@ -175,8 +159,6 @@ services:
           point: { type: random_in_world }
           duration: {mean: 15, sd: 4, min: 5}
           fail: 0.05
-      in_order: true
-      repeat: 0
 
   SurveillancePatrol:
     category: security
@@ -187,5 +169,3 @@ services:
           point: { type: random_in_world }
           duration: {mean: 50, sd: 15, min: 15}
           fail: 0.07
-      in_order: true
-      repeat: 0

@@ -8,126 +8,11 @@ from pathlib import Path
 # add parent directory to path to import project modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import yaml
 import pandas as pd
-import mesa
-import numpy as np
-import re
 
-# import all the model components
-from agents import HumanAgent, RobotAgent
-from tasks import Task
-from services import Service
-from metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
-from task_assignation import generate_tasks, assign_tasks
-from floor_plan import FloorPlan
-
-# modified robopreneurmodel that accepts config dict
-class RobopreneurModel(mesa.Model):
-    def __init__(self, config):
-        super().__init__()
-        
-        # store config
-        self.config = config
-        self.sim_config = config['simulation']
-        self.world_config = config['world']
-        self.humans_config = config['humans']
-        self.robots_config = config['robots']
-        self.battery_config = config['battery']
-        self.tasks_config = config['tasks']
-        self.services_config = config['services']
-
-        self.random = np.random.default_rng(self.sim_config['seed'])
-        self.world_mode = self.world_config.get("mode", "square")
-
-        self.floor_plan = None
-        if self.world_mode == "floor_plan":
-            floor_plan_config = self.world_config.get("floor_plan", {})
-            self.floor_plan = FloorPlan(floor_plan_config)
-            self.space = mesa.space.ContinuousSpace(
-                self.floor_plan.width,
-                self.floor_plan.height,
-                torus=False,
-            )
-            charging_station = tuple(self.world_config.get("charging_station", (0, 0)))
-            self.world_config["charging_station"] = list(
-                self.floor_plan.normalize_point(charging_station)
-            )
-        else:
-            self.space = mesa.space.ContinuousSpace(
-                self.world_config['size'],
-                self.world_config['size'],
-                torus=self.world_config['boundaries']
-            )
-
-        self.datacollector = mesa.DataCollector(
-            model_reporters={
-                "Gini": compute_gini,
-                "Tasks_Completed": compute_total_tasks_completed,
-                "System_Wealth": compute_total_system_wealth,
-                "Queue_Size": compute_task_queue_size,
-                "Critical_Battery": compute_critical_battery_rate
-            },
-            agent_reporters={"Wealth": "wealth", "Battery": lambda a: getattr(a, 'battery', None), "Status": "status", "Agent_Type": lambda a: "robot" if hasattr(a, 'battery') else "human"}
-        )
-
-        self.task_queue = []
-        self.task_counter = 0
-        self.completed_task_count = 0
-        self.failed_task_count = 0
-        self.completed_tasks = []  # for task lifecycle export
-
-        self.initialize_agents()
-        self.running = True
-        self.datacollector.collect(self)
-
-    def initialize_agents(self):
-        # create num agents for each human type
-        for human_type, human_config in self.humans_config.items():
-            num_agents = human_config.get('num', 1)
-            for i in range(num_agents):
-                agent_id = f"{human_type}_{i}"
-                human = HumanAgent(self, agent_id, human_config)
-                pos = self._random_world_position()
-                self.space.place_agent(human, pos)
-                human.location = pos
-                human.target_location = pos
-
-        # create num agents for each robot type
-        for robot_type, robot_config in self.robots_config.items():
-            num_agents = robot_config.get('num', 1)
-            for i in range(num_agents):
-                agent_id = f"{robot_type}_{i}"
-                robot = RobotAgent(self, agent_id, robot_config)
-                pos = self._random_world_position()
-                self.space.place_agent(robot, pos)
-                robot.location = pos
-                robot.target_location = pos
-
-    def _random_world_position(self):
-        if self.floor_plan:
-            return self.floor_plan.random_point(self.random)
-        return (
-            self.random.random() * self.world_config['size'],
-            self.random.random() * self.world_config['size'],
-        )
-
-    def step(self):
-        generate_tasks(self)
-        self.agents.do("step") 
-        assign_tasks(self)
-        self.datacollector.collect(self)
-
-        # check if simulation should stop
-        if self.steps >= self.sim_config['duration']:
-            self.running = False
-
-
-def load_config(config_path):
-    """load configuration from yaml file"""
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
-    return config
+# single shared model and config loader (no duplicate model definition)
+from model import RobopreneurModel
+from load_config import load_config
 
 
 def run_simulation(config_path):
@@ -167,7 +52,6 @@ def run_simulation(config_path):
     print(f"  saved: {output_dir / 'agent_data.csv'}")
 
     # save task lifecycle data (for task status graph)
-    task_df = None
     if model.completed_tasks:
         print("saving task lifecycle data...")
         rows = []
@@ -208,24 +92,6 @@ def run_simulation(config_path):
         'max_queue_size': model_data['Queue_Size'].max(),
         'avg_critical_battery_rate': model_data['Critical_Battery'].mean(),
     }
-
-    if task_df is not None and not task_df.empty:
-        completed_task_df = task_df[
-            (task_df["status"] == "completed") & task_df["time_in_progress"].notna()
-        ]
-        for task_name, group in completed_task_df.groupby("task_name"):
-            safe_name = re.sub(r"[^a-z0-9]+", "_", str(task_name).lower()).strip("_")
-            if not safe_name:
-                safe_name = "unknown_task"
-
-            duration = group["time_in_progress"]
-            prefix = f"exec_time_{safe_name}"
-            summary[f"{prefix}_count"] = int(duration.count())
-            summary[f"{prefix}_mean"] = float(duration.mean())
-            summary[f"{prefix}_median"] = float(duration.median())
-            summary[f"{prefix}_min"] = float(duration.min())
-            summary[f"{prefix}_max"] = float(duration.max())
-            summary[f"{prefix}_std"] = float(duration.std(ddof=0))
     
     summary_df = pd.DataFrame([summary])
     summary_df.to_csv(output_dir / "summary.csv", index=False)
@@ -245,7 +111,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("usage: python scripts/run_experiment.py <path_to_config.yaml>")
         print("\nexample:")
-        print("  python scripts/run_experiment.py experiments/exp-01-battery/scenario-a/config.yaml")
+        print("  python scripts/run_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml")
         sys.exit(1)
     
     config_path = sys.argv[1]

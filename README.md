@@ -15,24 +15,30 @@ agent-based model simulating economic competition between humans and robots in a
 | `movement.py` | proximity check helper |
 | `utils.py` | reward/duration sampling, waypoint resolution |
 | `metrics.py` | gini, wealth, queue size, critical battery rate |
-| `load_config.py` | loads `config.yaml` into module-level variables |
+| `load_config.py` | `load_config(path)` helper that parses a config yaml into a dict |
 | `app.py` | solara real-time visualization |
 
 ## quick start
 
 ```bash
-# interactive visualization
+# interactive visualization (uses the default config.yaml at the repo root)
 python -m solara run app.py
 
+# interactive visualization with a specific config
+# set ROBOPRENEUR_CONFIG to any config.yaml path before launching
+ROBOPRENEUR_CONFIG=experiments/milan/config.yaml python -m solara run app.py
+
 # headless run + plots (recommended)
-python scripts/run_full_experiment.py experiments/exp-00/scenario-a/config.yaml
+python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
 
 # simulation only
-python scripts/run_experiment.py experiments/exp-00/scenario-a/config.yaml
+python scripts/run_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
 
 # plots only (after simulation)
-python scripts/plot_results.py experiments/exp-00/scenario-a
+python scripts/plot_results.py experiments/no_map/exp-01-battery/scenario-a
 ```
+
+> on windows powershell, set the env var with `$env:ROBOPRENEUR_CONFIG="experiments/milan/config.yaml"` before running solara.
 
 ## config reference
 
@@ -40,21 +46,27 @@ all behaviour is controlled via a single `config.yaml`. the root-level keys are:
 
 ```
 simulation    seed, duration (steps)
-world         size, boundaries, charging_station
+world         mode (square | floor_plan), charging_station,
+              [square]     size, boundaries (torus wrap-around)
+              [floor_plan] floor_plan {exterior [[x,y]...], holes [[[x,y]...]...]}
 humans        one entry per agent type → num, initial_wealth, speed, schedule, services
 robots        one entry per agent type → num, initial_wealth, initial_battery, speed,
-              random_walk_interval, services
-battery       recharge_rate, drain_rate, recharge_trigger, min_accept_task
-tasks         arrival_rate (tasks/hour), proximity_threshold
-assignment_policy   random
-pricing_model       fixed
+              random_walk_interval, schedule, services
+battery       recharge_rate, drain_rate, recharge_trigger, min_accept_task,
+              recharge_max_wait (optional: steps before a robot re-requests help)
+tasks         mode (random | deterministic), proximity_threshold,
+              [random]        arrival_rate (tasks/hour)
+              [deterministic] deterministic_schedule [{day, time "HH:MM", counts {Service: n}}]
 services      one entry per service type → category, reward {median, sigma_g},
-              phases {waypoints [{id, point, duration, fail}], in_order, repeat}
+              phases {waypoints [{id, point, duration, fail}]}
 ```
 
-rewards are sampled from a lognormal distribution (`sigma_g: 0` → deterministic). durations accept a scalar or `{mean, sd, min}`. point types: `random_in_world` | `charging_station`.
+- **world.mode**: `square` is a plain continuous box; `floor_plan` builds a polygon (with optional holes) and routes agents around obstacles via jupedsim. the `charging_station` point is normalized into the floor-plan coordinate frame automatically.
+- **schedule**: `false` (always active) or `{active_from: "HH:MM", active_until: "HH:MM"}`. agents outside their window go inactive; an in-progress task is requeued and a robot's battery is frozen.
+- **tasks.mode**: `random` draws poisson arrivals from `arrival_rate`; `deterministic` injects exact `counts` at exact `day` + `time`.
+- rewards are sampled per task from a lognormal distribution (`sigma_g: 0` → deterministic). durations accept a scalar or `{mean, sd, min}`. point types: `random_in_world` | `charging_station`.
 
-see `config.yaml` for a fully annotated example.
+see `config.yaml` (square + floor_plan example) and `experiments/milan/config.yaml` (schedule + deterministic example) for fully annotated configs.
 
 ## scripts
 
@@ -73,20 +85,22 @@ see `config.yaml` for a fully annotated example.
 run before any simulation to catch errors early:
 
 ```bash
-python scripts/validate_config.py experiments/exp-00/scenario-a/config.yaml
+python scripts/validate_config.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
 ```
 
-checks: required top-level keys, field types and value ranges for all sections, service names referenced by agents exist in `services`, skill/fail values in `[0, 1]`, valid `assignment_policy` and `pricing_model` values, and correct waypoint structure.
+checks: required top-level keys, field types and value ranges for all sections, `world.mode` and the matching `floor_plan` / `size` fields, `tasks.mode` and its `arrival_rate` / `deterministic_schedule`, agent `schedule` windows, service names referenced by agents exist in `services`, skill/fail values in `[0, 1]`, and correct waypoint structure.
 
 ## experiments
 
-each experiment lives in `experiments/exp-XX-name/` with scenario subfolders and an `EXPERIMENT_CARD.md`. see `experiments/README.md` for full details.
+experiments are grouped by world type: `experiments/no_map/` (square world) and `experiments/floor_plan/` (polygon world with obstacles). each experiment folder (`exp-XX-name/`) has scenario subfolders (`scenario-a/b/c`) and an `EXPERIMENT_CARD.md`. `experiments/milan/` is a standalone 3-day scheduled + deterministic scenario. see `experiments/README.md` for full details.
 
 | experiment | variable | scenarios |
 |---|---|---|
 | `exp-01-battery` | `battery.recharge_trigger` (50 / 30 / 15) | a, b, c |
 | `exp-02-taskload` | `tasks.arrival_rate` (3 / 8 / 15) | a, b, c |
 | `exp-03-competition` | agent population ratio (6H:2R / 4H:4R / 2H:6R) | a, b, c |
+
+example: `python scripts/run_full_experiment.py experiments/floor_plan/exp-02-taskload/scenario-b/config.yaml`
 
 ## output files
 

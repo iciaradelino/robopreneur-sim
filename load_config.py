@@ -1,14 +1,16 @@
+import os
+
 import yaml
 
-with open('config.yaml', 'r') as file:
-    config = yaml.safe_load(file)
+# default config lives next to this file (repo root), independent of the cwd
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
 
-sim_config = config['simulation']
-world_config = config['world']
-humans_config = config['humans']
-robots_config = config['robots']
-battery_config = config['battery']
-tasks_config = config['tasks']
-assignment_policy_config = config['assignment_policy']
-pricing_model_config = config['pricing_model']
-services_config = config['services']
+
+def load_config(path=None):
+    """load a simulation config from a yaml file and return the full dict.
+
+    when no path is given the default config.yaml at the repo root is used.
+    """
+    config_path = path or DEFAULT_CONFIG_PATH
+    with open(config_path, "r") as file:
+        return yaml.safe_load(file)

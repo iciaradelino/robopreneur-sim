@@ -63,7 +63,7 @@ def build_execution_details(service_config, model):
         resolved_point = resolve_waypoint(waypoint["point"], model)
         fail_cfg = waypoint.get("fail", 0.0)
 
-        # this if statement is not necessary because there is ony going to be one way of defining failure
+        # fail can be a plain probability or a {model, p} mapping
         if isinstance(fail_cfg, (int, float)):
             fail_model = {"model": "per_phase", "p": float(fail_cfg)}
         else:

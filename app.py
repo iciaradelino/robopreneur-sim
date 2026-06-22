@@ -1,4 +1,5 @@
 # minimal solara app to run the mesa model
+import os
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from mesa.visualization import SolaraViz, make_plot_component
@@ -6,6 +7,7 @@ from mesa.visualization.utils import update_counter
 import pandas as pd
 import solara
 from model import RobopreneurModel
+from load_config import load_config
 
 def _collect_in_progress_tasks(model):
     """collect active tasks from agents"""
@@ -313,8 +315,11 @@ def agent_use_component(model):
     solara.FigureMatplotlib(fig)
     plt.close(fig)
 
-# create a model instance
-model = RobopreneurModel()
+# create a model instance.
+# choose the config via the ROBOPRENEUR_CONFIG env var (path to a config.yaml);
+# when unset, the default config.yaml at the repo root is used.
+_config_path = os.environ.get("ROBOPRENEUR_CONFIG")
+model = RobopreneurModel(load_config(_config_path) if _config_path else None)
 
 # use the custom map as the space visualization
 space_component = floor_plan_map_component

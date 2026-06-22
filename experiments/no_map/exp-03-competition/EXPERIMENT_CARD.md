@@ -23,7 +23,7 @@
 - `battery.recharge_rate`: 0.167
 - `battery.drain_rate`: 0.2
 - `battery.min_accept_task`: 35
-- `assignment_policy`: random
+- task assignment: random (the simulator's only policy)
 - All service and world parameters unchanged
 
 ## EXPECTED OUTCOMES
