@@ -1,5 +1,7 @@
 .venv/
+venv/
 __pycache__/
+*.pyc
 
 # experiment results
 experiments/**/model_data.csv
@@ -7,3 +9,7 @@ experiments/**/agent_data.csv
 experiments/**/summary.csv
 experiments/**/*.png
 experiments/**/*.csv
+
+# docker exports
+*.tar.gz
+*.tar
