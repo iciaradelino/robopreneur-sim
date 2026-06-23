@@ -1,115 +1,91 @@
-# robopreneur simulation
+# Robopreneur Sim
 
-agent-based model simulating economic competition between humans and robots in a service-based economy. built with [mesa](https://mesa.readthedocs.io/) on a continuous 2d space.
+An agent-based simulation (built on [Mesa](https://mesa.readthedocs.io/)) of robots and humans
+offering paid services in a shared workspace. Agents move through a continuous space or a
+floor plan, pick up tasks from a queue, earn wealth, and (for robots) manage battery and
+recharging. The model tracks system metrics such as task throughput, wealth distribution
+(Gini), queue size, and critical-battery rate.
 
-## architecture
+## Run with Docker
 
-| module | role |
-|---|---|
-| `model.py` | mesa model — initializes agents, runs the step loop, collects metrics |
-| `agents.py` | `HumanAgent` and `RobotAgent` — movement, task execution, phase traversal |
-| `task_assignation.py` | poisson task generation, eligibility filtering, random assignment |
-| `services.py` | service dataclass used by agents |
-| `battery.py` | per-step battery drain/recharge logic for robots |
-| `economy.py` | wealth transfer on task completion |
-| `movement.py` | proximity check helper |
-| `utils.py` | reward/duration sampling, waypoint resolution |
-| `metrics.py` | gini, wealth, queue size, critical battery rate |
-| `load_config.py` | `load_config(path)` helper that parses a config yaml into a dict |
-| `app.py` | solara real-time visualization |
-
-## quick start
+Build the image:
 
 ```bash
-# interactive visualization (uses the default config.yaml at the repo root)
-python -m solara run app.py
-
-# interactive visualization with a specific config
-# set ROBOPRENEUR_CONFIG to any config.yaml path before launching
-ROBOPRENEUR_CONFIG=experiments/milan/config.yaml python -m solara run app.py
-
-# headless run + plots (recommended)
-python scripts/run_full_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
-
-# simulation only
-python scripts/run_experiment.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
-
-# plots only (after simulation)
-python scripts/plot_results.py experiments/no_map/exp-01-battery/scenario-a
+docker build -t robopreneur-sim .
 ```
 
-> on windows powershell, set the env var with `$env:ROBOPRENEUR_CONFIG="experiments/milan/config.yaml"` before running solara.
+### Interactive visualization (default)
 
-## config reference
-
-all behaviour is controlled via a single `config.yaml`. the root-level keys are:
-
-```
-simulation    seed, duration (steps)
-world         mode (square | floor_plan), charging_station,
-              [square]     size, boundaries (torus wrap-around)
-              [floor_plan] floor_plan {exterior [[x,y]...], holes [[[x,y]...]...]}
-humans        one entry per agent type → num, initial_wealth, speed, schedule, services
-robots        one entry per agent type → num, initial_wealth, initial_battery, speed,
-              random_walk_interval, schedule, services
-battery       recharge_rate, drain_rate, recharge_trigger, min_accept_task,
-              recharge_max_wait (optional: steps before a robot re-requests help)
-tasks         mode (random | deterministic), proximity_threshold,
-              [random]        arrival_rate (tasks/hour)
-              [deterministic] deterministic_schedule [{day, time "HH:MM", counts {Service: n}}]
-services      one entry per service type → category, reward {median, sigma_g},
-              phases {waypoints [{id, point, duration, fail}]}
-```
-
-- **world.mode**: `square` is a plain continuous box; `floor_plan` builds a polygon (with optional holes) and routes agents around obstacles via jupedsim. the `charging_station` point is normalized into the floor-plan coordinate frame automatically.
-- **schedule**: `false` (always active) or `{active_from: "HH:MM", active_until: "HH:MM"}`. agents outside their window go inactive; an in-progress task is requeued and a robot's battery is frozen.
-- **tasks.mode**: `random` draws poisson arrivals from `arrival_rate`; `deterministic` injects exact `counts` at exact `day` + `time`.
-- rewards are sampled per task from a lognormal distribution (`sigma_g: 0` → deterministic). durations accept a scalar or `{mean, sd, min}`. point types: `random_in_world` | `charging_station`.
-
-see `config.yaml` (square + floor_plan example) and `experiments/milan/config.yaml` (schedule + deterministic example) for fully annotated configs.
-
-## scripts
-
-| script | usage |
-|---|---|
-| `scripts/validate_config.py` | check a config before running |
-| `scripts/run_experiment.py` | headless simulation → csv output |
-| `scripts/run_full_experiment.py` | simulation + all plots |
-| `scripts/plot_results.py` | generate all plots from csv |
-| `scripts/plot_individual_battery.py` | battery plot for a single scenario |
-| `scripts/plot_task_status.py` | task lifecycle plot |
-| `scripts/compare_scenarios.py` | side-by-side scenario comparison |
-
-## config validation
-
-run before any simulation to catch errors early:
+Run the Solara dashboard and open it in your browser:
 
 ```bash
-python scripts/validate_config.py experiments/no_map/exp-01-battery/scenario-a/config.yaml
+docker run --rm -p 8765:8765 robopreneur-sim
 ```
 
-checks: required top-level keys, field types and value ranges for all sections, `world.mode` and the matching `floor_plan` / `size` fields, `tasks.mode` and its `arrival_rate` / `deterministic_schedule`, agent `schedule` windows, service names referenced by agents exist in `services`, skill/fail values in `[0, 1]`, and correct waypoint structure.
+Then visit **http://localhost:8765**.
 
-## experiments
+### Change the simulation settings
 
-experiments are grouped by world type: `experiments/no_map/` (square world) and `experiments/floor_plan/` (polygon world with obstacles). each experiment folder (`exp-XX-name/`) has scenario subfolders (`scenario-a/b/c`) and an `EXPERIMENT_CARD.md`. `experiments/milan/` is a standalone 3-day scheduled + deterministic scenario. see `experiments/README.md` for full details.
+The simulation reads its parameters from [`config.yaml`](config.yaml) — edit that file to
+change the number of agents, services, battery behaviour, task rate, run length, etc.
 
-| experiment | variable | scenarios |
-|---|---|---|
-| `exp-01-battery` | `battery.recharge_trigger` (50 / 30 / 15) | a, b, c |
-| `exp-02-taskload` | `tasks.arrival_rate` (3 / 8 / 15) | a, b, c |
-| `exp-03-competition` | agent population ratio (6H:2R / 4H:4R / 2H:6R) | a, b, c |
+The `Dockerfile` copies `config.yaml` into the image at build time, so after editing it just
+rebuild (`docker build -t robopreneur-sim .`). To iterate without rebuilding each time, mount
+your local file over the one in the container:
 
-example: `python scripts/run_full_experiment.py experiments/floor_plan/exp-02-taskload/scenario-b/config.yaml`
+```bash
+docker run --rm -p 8765:8765 \
+  -v "$(pwd)/config.yaml:/app/config.yaml" \
+  robopreneur-sim
+```
 
-## output files
+### Headless experiment run
 
-each scenario folder contains after a run:
+Run a simulation without the UI and write CSV results back to your host. Mount a
+directory so the output (`model_data.csv`, `agent_data.csv`, `task_data.csv`,
+`summary.csv`) lands next to the config:
 
-| file | contents |
-|---|---|
-| `model_data.csv` | per-step model metrics (gini, wealth, queue size, critical battery) |
-| `agent_data.csv` | per-step per-agent wealth, battery, status, type |
-| `task_data.csv` | task lifecycle — created/assigned/completed steps, status, phases |
-| `summary.csv` | scalar summary statistics |
-| `*.png` | all generated plots |
+```bash
+docker run --rm \
+  -v "$(pwd)/experiments:/app/experiments" \
+  robopreneur-sim \
+  python scripts/run_experiment.py experiments/floor_plan/exp-01-battery/scenario-a/config.yaml
+```
+
+## Run locally (without Docker)
+
+```bash
+pip install -r requirements.txt
+
+# interactive dashboard
+solara run app.py
+
+# headless experiment
+python scripts/run_experiment.py <path/to/config.yaml>
+```
+
+## Configuration
+
+All simulation parameters live in [`config.yaml`](config.yaml): simulation length and seed,
+world geometry (`square` or `floor_plan`), human/robot agents and their services, battery
+behaviour, task arrival rate, and per-service rewards and phases. Pass an alternate config
+via the `ROBOPRENEUR_CONFIG` environment variable (dashboard) or as the CLI argument
+(headless).
+
+## Project layout
+
+| Path | Purpose |
+| --- | --- |
+| `model.py` | Mesa model: world setup, stepping, data collection |
+| `agents.py` | Human and robot agent behaviour |
+| `task_assignation.py`, `tasks.py` | Task generation and assignment |
+| `battery.py`, `floor_plan.py`, `schedule.py` | Battery, geometry, and scheduling logic |
+| `metrics.py` | Model-level reporters (Gini, throughput, etc.) |
+| `app.py` | Solara dashboard and plot components |
+| `scripts/` | Headless runners and plotting utilities |
+| `experiments/` | Predefined experiment configs and results |
+
+## Outputs
+
+Headless runs produce per-run CSVs and a one-line `summary.csv`. Use the helpers in
+`scripts/` (e.g. `plot_results.py`, `compare_scenarios.py`) to generate plots from them.
