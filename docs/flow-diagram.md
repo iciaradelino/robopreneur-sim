@@ -1,3 +1,5 @@
+
+```mermaid
 flowchart TD
 
   %% ── colour palette ──────────────────────────────────────────────
@@ -274,3 +276,4 @@ flowchart TD
     MC_START --> MC4
     MC_START --> MC5
   end
+```
