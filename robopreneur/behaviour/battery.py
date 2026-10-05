@@ -1,8 +1,8 @@
 # battery management logic
 
-from tasks import Task, requeue_task
-from movement import check_if_at_location
-from utils import build_execution_details
+from robopreneur.tasks.tasks import Task, requeue_task
+from robopreneur.world.movement import check_if_at_location
+from robopreneur.world.utils import build_execution_details
 
 def generate_recharge_task(model, robot):
     """

@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 
 # single shared model and config loader (no duplicate model definition)
-from model import RobopreneurModel
-from load_config import load_config
+from robopreneur.core.model import RobopreneurModel
+from robopreneur.config.load_config import load_config
 
 
 def run_simulation(config_path):

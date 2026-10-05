@@ -6,8 +6,8 @@ from mesa.visualization import SolaraViz, make_plot_component
 from mesa.visualization.utils import update_counter
 import pandas as pd
 import solara
-from model import RobopreneurModel
-from load_config import load_config
+from robopreneur.core.model import RobopreneurModel
+from robopreneur.config.load_config import load_config
 
 def _collect_in_progress_tasks(model):
     """collect active tasks from agents"""

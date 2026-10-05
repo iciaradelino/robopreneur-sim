@@ -29,13 +29,13 @@ flowchart TD
   subgraph CONFIG["⚙️  configuration"]
     direction LR
     YAML[("config.yaml\nexperiments/**/config.yaml")]:::data
-    LOAD["load_config.py\nyaml → dict"]:::util
+    LOAD["config/load_config.py\nyaml → dict"]:::util
   end
 
   %% ═══════════════════════════════════════════════════════════════
   %% CORE MODEL
   %% ═══════════════════════════════════════════════════════════════
-  subgraph CORE["🧠  core  —  model.py"]
+  subgraph CORE["🧠  core  —  core/model.py"]
     MODEL["RobopreneurModel (mesa.Model)\nowns: space · agents · task_queue\ncompleted_tasks · datacollector · rng"]:::core
   end
 
@@ -44,20 +44,20 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   subgraph BEHAVIOUR["🤖  agents & behaviour"]
     direction TB
-    AGENTS["agents.py\nHumanAgent · RobotAgent\nmove · execute task phases · finish task"]:::agent
-    BATT["battery.py\ndrain / recharge\ncreates BatteryCharging tasks"]:::agent
-    SCHED["schedule.py\nactive hours · day / minute clock"]:::agent
+    AGENTS["behaviour/agents.py\nHumanAgent · RobotAgent\nmove · execute task phases · finish task"]:::agent
+    BATT["behaviour/battery.py\ndrain / recharge\ncreates BatteryCharging tasks"]:::agent
+    SCHED["behaviour/schedule.py\nactive hours · day / minute clock"]:::agent
   end
 
   subgraph TASKS["📋  tasks"]
     direction TB
-    TA["task_assignation.py\ngenerate_tasks · assign_tasks"]:::task
-    TASKPY["tasks.py\nTask class · requeue_task"]:::task
-    SERV["services.py\nService class\n(name · category · skill)"]:::task
+    TA["tasks/task_assignation.py\ngenerate_tasks · assign_tasks"]:::task
+    TASKPY["tasks/tasks.py\nTask class · requeue_task"]:::task
+    SERV["tasks/services.py\nService class\n(name · category · skill)"]:::task
   end
 
   subgraph ECON["💰  economy"]
-    ECO["economy.py\ntransfer_reward\nassigner.wealth → assignee.wealth"]:::economy
+    ECO["economy/economy.py\ntransfer_reward\nassigner.wealth → assignee.wealth"]:::economy
   end
 
   %% ═══════════════════════════════════════════════════════════════
@@ -65,10 +65,10 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   subgraph WORLD["🗺️  world & helpers"]
     direction LR
-    FP["floor_plan.py\npolygon world · path routing"]:::util
-    MOV["movement.py\ncheck_if_at_location"]:::util
-    UTIL["utils.py\nsample reward / duration\nresolve waypoints"]:::util
-    MET["metrics.py\ngini · throughput · wealth\nqueue size · critical battery"]:::util
+    FP["world/floor_plan.py\npolygon world · path routing"]:::util
+    MOV["world/movement.py\ncheck_if_at_location"]:::util
+    UTIL["world/utils.py\nsample reward / duration\nresolve waypoints"]:::util
+    MET["world/metrics.py\ngini · throughput · wealth\nqueue size · critical battery"]:::util
   end
 
   %% ═══════════════════════════════════════════════════════════════

@@ -1,9 +1,9 @@
 # the logic to assign tasks to agents
 
-from agents import RobotAgent
-from tasks import Task
-from utils import build_execution_details, sample_reward
-from schedule import current_day, minute_of_day, parse_hhmm, minutes_per_day
+from robopreneur.behaviour.agents import RobotAgent
+from robopreneur.tasks.tasks import Task
+from robopreneur.world.utils import build_execution_details, sample_reward
+from robopreneur.behaviour.schedule import current_day, minute_of_day, parse_hhmm, minutes_per_day
 
 # add all the details to the task
 def _create_task(model, service_name):

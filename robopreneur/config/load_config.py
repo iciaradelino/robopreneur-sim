@@ -2,8 +2,9 @@ import os
 
 import yaml
 
-# default config lives next to this file (repo root), independent of the cwd
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+# default config lives at the repo root (three levels up from this file), independent of the cwd
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEFAULT_CONFIG_PATH = os.path.join(REPO_ROOT, "config.yaml")
 
 
 def load_config(path=None):

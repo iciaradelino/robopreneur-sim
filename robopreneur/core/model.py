@@ -1,11 +1,11 @@
 import mesa
 import numpy as np
 
-from agents import HumanAgent, RobotAgent
-from metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
-from task_assignation import generate_tasks, assign_tasks
-from floor_plan import FloorPlan
-from load_config import load_config
+from robopreneur.behaviour.agents import HumanAgent, RobotAgent
+from robopreneur.world.metrics import compute_gini, compute_total_tasks_completed, compute_total_system_wealth, compute_task_queue_size, compute_critical_battery_rate
+from robopreneur.tasks.task_assignation import generate_tasks, assign_tasks
+from robopreneur.world.floor_plan import FloorPlan
+from robopreneur.config.load_config import load_config
 
 class RobopreneurModel(mesa.Model):
     def __init__(self, config=None):

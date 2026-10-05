@@ -76,11 +76,12 @@ via the `ROBOPRENEUR_CONFIG` environment variable (dashboard) or as the CLI argu
 
 | Path | Purpose |
 | --- | --- |
-| `model.py` | Mesa model: world setup, stepping, data collection |
-| `agents.py` | Human and robot agent behaviour |
-| `task_assignation.py`, `tasks.py` | Task generation and assignment |
-| `battery.py`, `floor_plan.py`, `schedule.py` | Battery, geometry, and scheduling logic |
-| `metrics.py` | Model-level reporters (Gini, throughput, etc.) |
+| `robopreneur/config/` | `load_config.py`: reads `config.yaml` into a dict |
+| `robopreneur/core/` | `model.py`: Mesa model (world setup, stepping, data collection) |
+| `robopreneur/behaviour/` | `agents.py`, `battery.py`, `schedule.py`: human/robot behaviour, battery, active hours |
+| `robopreneur/tasks/` | `task_assignation.py`, `tasks.py`, `services.py`: task generation, assignment, services |
+| `robopreneur/economy/` | `economy.py`: reward transfers between agents |
+| `robopreneur/world/` | `floor_plan.py`, `movement.py`, `utils.py`, `metrics.py`: geometry, movement, helpers, reporters |
 | `app.py` | Solara dashboard and plot components |
 | `scripts/` | Headless runners and plotting utilities |
 | `experiments/` | Predefined experiment configs and results |

@@ -1,11 +1,11 @@
 import mesa
 import numpy as np
-from services import Service
-from battery import update_battery
-from movement import check_if_at_location
-from economy import transfer_reward
-from schedule import parse_active_window, is_active
-from tasks import requeue_task
+from robopreneur.tasks.services import Service
+from robopreneur.behaviour.battery import update_battery
+from robopreneur.world.movement import check_if_at_location
+from robopreneur.economy.economy import transfer_reward
+from robopreneur.behaviour.schedule import parse_active_window, is_active
+from robopreneur.tasks.tasks import requeue_task
 
 def _pick_random_target(agent):
     ''' pick a random target for the agent '''

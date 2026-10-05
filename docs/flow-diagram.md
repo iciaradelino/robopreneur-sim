@@ -18,7 +18,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   %% 1 · INITIALIZATION
   %% ═══════════════════════════════════════════════════════════════
-  subgraph INIT["🔧  initialization  —  model.py"]
+  subgraph INIT["🔧  initialization  —  core/model.py"]
     direction TB
     I1([load config.yaml]):::init
     I2[create ContinuousSpace\n100×100 units]:::init
@@ -68,7 +68,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   ML1 -.->|calls| TG_START
 
-  subgraph TASKGEN["📋  generate_tasks  —  task_assignation.py"]
+  subgraph TASKGEN["📋  generate_tasks  —  tasks/task_assignation.py"]
     direction TB
     TG_START([generate_tasks called]):::taskgen
     TG1[sample num_tasks\nPoisson  λ = arrival_rate ÷ 60]:::taskgen
@@ -92,7 +92,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   ML2 -.->|each human| HA_START
 
-  subgraph HUMANSTEP["🧑  HumanAgent.step  —  agents.py"]
+  subgraph HUMANSTEP["🧑  HumanAgent.step  —  behaviour/agents.py"]
     direction TB
     HA_START([human.step]):::human
     HA1{status == exec?}:::decision
@@ -111,7 +111,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   ML2 -.->|each robot| RA_START
 
-  subgraph ROBOTSTEP["🤖  RobotAgent.step  —  agents.py"]
+  subgraph ROBOTSTEP["🤖  RobotAgent.step  —  behaviour/agents.py"]
     direction TB
     RA_START([robot.step]):::robot
     RA1[update_battery]:::robot
@@ -136,7 +136,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   RA1 -.->|calls| BAT_START
 
-  subgraph BATTERY["🔋  update_battery  —  battery.py"]
+  subgraph BATTERY["🔋  update_battery  —  behaviour/battery.py"]
     direction TB
     BAT_START([update_battery called]):::battery
     BAT1{awaiting_recharge?}:::decision
@@ -176,7 +176,7 @@ flowchart TD
   HA2 -.->|calls| TE_START
   RA3 -.->|calls| TE_START
 
-  subgraph TASKEXEC["⚙️  _execute_phase_task  —  agents.py"]
+  subgraph TASKEXEC["⚙️  _execute_phase_task  —  behaviour/agents.py"]
     direction TB
     TE_START([execute_task called]):::exec
     TE1{at current waypoint?}:::decision
@@ -209,7 +209,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   ML3 -.->|calls| TA_START
 
-  subgraph TASKASSIGN["🎯  assign_tasks  —  task_assignation.py"]
+  subgraph TASKASSIGN["🎯  assign_tasks  —  tasks/task_assignation.py"]
     direction TB
     TA_START([assign_tasks called]):::assign
     TA0{task_queue empty?}:::decision
@@ -244,7 +244,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   TE10 -.->|calls| EC_START
 
-  subgraph ECONOMY["💰  transfer_reward  —  economy.py"]
+  subgraph ECONOMY["💰  transfer_reward  —  economy/economy.py"]
     direction LR
     EC_START([transfer_reward called]):::economy
     EC1[find assigner agent by id]:::economy
@@ -261,7 +261,7 @@ flowchart TD
   %% ═══════════════════════════════════════════════════════════════
   ML4 -.->|calls| MC_START
 
-  subgraph METRICS["📊  datacollector.collect  —  metrics.py"]
+  subgraph METRICS["📊  datacollector.collect  —  world/metrics.py"]
     direction LR
     MC_START([collect called]):::metrics
     MC1[Gini coefficient\nwealth inequality]:::metrics
