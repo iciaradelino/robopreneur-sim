@@ -1,0 +1,43 @@
+# blockchain demo configuration (independent from the simulator's config.yaml)
+
+chain:
+  rpc: http://127.0.0.1:8545
+  seed: 32                    # agent wallets are derived from seed + agent name
+  gas_eth_per_agent: 10       # test ETH the master sends each agent for gas
+  solc_version: 0.8.24
+  evm_version: shanghai       # ganache v7 does not support cancun
+
+token:
+  total_supply: 100000        # IEC, all minted to the master at deploy time
+
+agents:
+  robot_1:
+    kind: robot
+    initial_wealth: 2000
+    services: { LabCleaning: 0.95, ItemTransport: 0.95, SurveillancePatrol: 0.90 }
+  robot_2:
+    kind: robot
+    initial_wealth: 2000
+    services: { LabCleaning: 0.95, ComponentRestock: 0.90 }
+  human_1:
+    kind: human
+    initial_wealth: 2000
+    services: { BatteryCharging: 0.95, LabCleaning: 0.95, SystemUpdate: 0.95 }
+  human_2:
+    kind: human
+    initial_wealth: 2000
+    services: { BatteryCharging: 0.95, PowerSupply: 0.95, FunctionalityTest: 0.95 }
+
+services:                     # category, reward range (IEC) and execution time
+  BatteryCharging:    { category: maintenance, reward: [80, 140],  duration_s: 3 }
+  LabCleaning:        { category: cleaning,    reward: [100, 180], duration_s: 4 }
+  ItemTransport:      { category: logistics,   reward: [60, 120],  duration_s: 3 }
+  PowerSupply:        { category: maintenance, reward: [90, 150],  duration_s: 3 }
+  SystemUpdate:       { category: it,          reward: [50, 100],  duration_s: 2 }
+  FunctionalityTest:  { category: it,          reward: [70, 130],  duration_s: 3 }
+  SurveillancePatrol: { category: security,    reward: [80, 160],  duration_s: 5 }
+  ComponentRestock:   { category: logistics,   reward: [60, 110],  duration_s: 3 }
+
+behaviour:
+  create_task_every_s: [5, 12]  # each agent posts a task at a random interval
+  poll_interval_s: 0.5

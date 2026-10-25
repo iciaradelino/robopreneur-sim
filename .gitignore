@@ -13,3 +13,7 @@ experiments/**/*.csv
 # docker exports
 *.tar.gz
 *.tar
+# blockchain demo
+demo/node_modules/
+demo/out/
+demo/.venv/

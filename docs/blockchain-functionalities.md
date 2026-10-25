@@ -10,14 +10,16 @@ decision was made. Written for someone new to blockchain.
 | Term | Plain meaning | In our simulator |
 | --- | --- | --- |
 | **Blockchain / ledger** | A shared notebook of every money movement and important action. Pages can only be added, never edited or torn out. | Replaces the floating `wealth` numbers with a history everyone can check. |
-| **Block** | One page of that notebook — a batch of actions recorded together. | **One block = one simulation step** (1 minute). |
+| **Block** | One page of that notebook — a batch of actions recorded together. | Ganache mines **one block per transaction**, instantly. The block's timestamp tells us the simulation step (D2). |
+| **Ganache** | A personal Ethereum blockchain that runs on your own computer. Free, instant, no internet, comes with pre-funded test accounts. | Started fresh by the simulator for every run. |
+| **ETH (test ether)** | Ethereum's own currency, needed to pay gas. On Ganache it's free play money. | Only used to pay gas. Separate from IEC. |
 | **Wallet** | An account: an *address* (like an IBAN, public) + a *private key* (like a PIN, secret, used to sign). | Every human and robot gets one. |
 | **Token** | The money that lives on the chain. | `IEC` — the currency already used in `config.yaml` (`initial_wealth: 2000 # IEC`). |
 | **Transaction** | A signed request to change something on the chain ("send 120 IEC to X", "create task"). | Every money move or task state change. |
 | **Smart contract** | A small program stored on the chain. Nobody can change its rules once deployed, and it can hold money itself. | The rules of our marketplace: registries + task escrow. |
 | **Escrow** | Money parked with a neutral third party until a job is done. | The contract holds the reward while a task is in progress. |
 | **Event** | A public announcement a contract makes ("task 42 completed"). Cheap to emit, easy to listen to. | Feeds metrics, dashboard and CSV logs. |
-| **Gas** | The fee paid to the network for running a transaction. | Tracked, optionally charged (see decision D6). |
+| **Gas** | The fee paid to the network for running a transaction, paid in ETH. | Paid with Ganache test ETH, recorded per transaction; never touches IEC (D6). |
 | **Oracle** | Someone who tells the chain about the real world. The chain can't "see" if a robot actually cleaned the lab. | The simulator itself reports task outcomes. |
 | **On-chain / off-chain** | Stored on the blockchain vs. stored in normal program memory. | Money + agreements on-chain; movement, battery, physics off-chain. |
 
@@ -97,6 +99,9 @@ Wallet
   balance()     – reads IEC balance from the token contract (not stored locally!)
   nonce         – counter of transactions sent (prevents replaying the same tx twice)
 ```
+
+A wallet holds **two currencies**: **IEC** (the market's money, what agents earn and
+spend) and a little **test ETH** (only to pay gas — see D6).
 
 **Functionalities**
 - **Create** one wallet per agent at initialization.
@@ -180,7 +185,48 @@ stateDiagram-v2
 | service name | agent skill used for fail roll |
 | reward amount (locked) | |
 | status | |
-| created / assigned / closed block | |
+| created / assigned / closed time (→ simulation step) | |
+
+#### 2.4.1 · What is escrow, and why does it need the amount at creation?
+
+**Escrow = a neutral middle-man holds the money until the job is done.**
+You already know it from everyday life:
+- **Airbnb:** you pay when you *book*. Airbnb holds the money and only releases it to the
+  host after you check in. If the booking is cancelled, you get it back.
+- **Wallapop / Vinted protected payment:** the buyer pays, the platform holds the money,
+  the seller gets it only when the buyer confirms the item arrived.
+
+In our simulator the middle-man is the **TaskEscrow smart contract**. Since it's code on a
+blockchain, nobody — not the assigner, not the worker, not even us — can take the money
+out except by following its rules (complete → worker, fail/cancel → back to assigner).
+
+**Why does it need the amount when the task is created, not when it's assigned?**
+
+1. **You can't lock money if you don't know how much.** Locking *is* the creation step:
+   "I post this job and put 140 IEC on the table".
+2. **Otherwise the promise could be empty.** If we only charged at assignment, between
+   creation and assignment the assigner keeps spending on other tasks. By the time a
+   worker is found, the money might be gone. Today that's exactly what happens — and the
+   assigner just goes negative, which a real currency can't do.
+3. **Every task in the queue is guaranteed to be paid.** The task queue becomes a list of
+   *fully funded* job offers. A worker who accepts one never works for nothing.
+4. **The worker sees the price before accepting** — like a job posting that shows the
+   salary. That also opens the door to future features (e.g. agents choosing tasks by
+   reward).
+5. **There's one clear moment to check "can you afford this?"** — at creation. If not,
+   the task is simply never posted (D7), instead of hanging in the queue with no money
+   behind it.
+
+In the current code the reward doesn't depend on *who* does the task (`sample_reward` only
+uses the service's config), so moving the draw from assignment to creation doesn't change
+its meaning — only *when* it is drawn.
+
+```
+creation        assignment         execution              end
+   │                │                  │                   │
+assigner ──140──▶ [ ESCROW holds 140 ] ─────────────────▶ success: 140 → worker
+                                                          failure: 140 → assigner
+```
 
 **Functionalities**
 - `createTask(service, reward)` — sent by the **assigner**. Moves `reward` IEC from the
@@ -209,13 +255,14 @@ simulator keeps the full list.
 ```
 Transaction
   tx_hash       – unique id
-  block         – simulation step in which it was included
+  block         – Ganache block it was mined in (one per transaction)
+  step          – simulation step, from the block timestamp (D2)
   sender        – wallet address that signed it
   contract      – Token / AgentRegistry / ServiceRegistry / TaskEscrow
   function      – e.g. createTask
   args          – e.g. {service: "LabCleaning", reward: 140}
   value_moved   – IEC moved (0 if none)
-  gas_used      – cost estimate
+  gas_used      – real gas used, from the receipt (paid in test ETH, D6)
   status        – success / reverted (+ reason, e.g. "insufficient balance")
 ```
 
@@ -223,6 +270,7 @@ Transaction
 
 | Transaction | Sender | Moves money? | When |
 | --- | --- | --- | --- |
+| ETH transfer (gas money) | operator | test ETH only, no IEC | init |
 | `mint` (initial funding) | operator | yes → agent | init |
 | `registerAgent` | agent | no | init |
 | `registerService` | agent | no | init |
@@ -233,7 +281,7 @@ Transaction
 | `failTask` | operator | yes escrow → assigner | `_finish_task(success=False)` |
 
 **Functionalities**
-- Send, sign, include in the current block.
+- Send, sign, mined instantly by Ganache; the simulator gets the receipt back right away.
 - **Revert** cleanly: if a rule is broken (not enough IEC, not registered…), the transaction
   is rejected and nothing changes. The simulator must handle this (e.g. task is not created).
 - Export to `transactions.csv` alongside the existing CSVs.
@@ -293,23 +341,56 @@ Four contracts, each with one job:
 
 ## 4 · Design decisions
 
-**D1 · Mock chain first, real chain second.**
-We define one Python interface (`createTask`, `completeTask`, `balanceOf`, …) with two
-backends:
-- **MockChain** — pure Python, in memory. Follows exactly the same rules, transactions and
-  events. Fast and deterministic → used for experiments with 10 000 steps.
-- **EVM backend** — real Solidity contracts on a local test blockchain (Anvil), called via
-  `web3.py`. Slower, but it's a real blockchain → used for demos and to prove it works.
+**D1 · Ganache, started fresh for every run.** ✅ *decided*
+The contracts are written in **Solidity** and run on **Ganache**, a local Ethereum
+blockchain. The simulator starts its own Ganache process at the beginning of each run and
+stops it at the end:
+- `--wallet.seed <simulation seed>` → the same pre-funded accounts every run;
+- `--chain.time <fixed start date>` → the chain clock starts at the same moment every run;
+- the first Ganache account (pre-loaded with test ETH) becomes the **operator** (D3).
 
-*Why:* a real local chain adds ~milliseconds per transaction and thousands of transactions
-per run; experiments would become slow and harder to reproduce. Starting with the mock lets
-us design and test the rules quickly, then "swap the engine".
-A config flag picks the backend: `blockchain: {enabled: true, backend: mock | evm}`, and
-`enabled: false` keeps the simulator exactly as it is today.
+All Python ↔ blockchain communication goes through one **chain client** module
+(`blockchain/chain.py`, built on `web3.py`). It sends and signs transactions, waits for
+receipts, turns reverts into Python errors the simulator can react to, decodes events, and
+writes the transaction / event logs. The rest of the simulator calls simple functions like
+`chain.create_task(wallet, service, reward)`.
 
-**D2 · One block per simulation step.**
-All transactions from one `model.step()` go into the same block. Simple to reason about
-and lines up with existing `*_step` fields.
+*Why a fresh chain per run:* runs are independent (no leftover balances or tasks from a
+previous run) and reproducible (same seed → same accounts, addresses and results).
+*Why one chain client module:* web3 details stay in one place, and if we ever switch from
+Ganache (it was sunset by Consensys in 2023; Hardhat and Anvil are maintained alternatives)
+or move to a public testnet, only this module changes.
+*Cost:* every economic action is a real transaction over JSON-RPC, so a 10 000-step run
+takes minutes instead of seconds.
+
+Config:
+
+```yaml
+blockchain:
+  ganache_cmd: ganache      # command used to start Ganache (Node.js package)
+  port: 8545
+  gas_eth_per_agent: 10     # test ETH each agent wallet receives for gas
+```
+
+**D1b · The blockchain is always on.** ✅ *decided*
+There is no `enabled` switch: every run uses wallets, registries and escrow. The old
+`wealth -= / wealth +=` path in `economy.py` is removed; `economy.py` becomes the thin
+"payments" module that talks to the TaskEscrow (`settle_task(task, success)` →
+`completeTask` / `failTask`), so `agents.py` keeps calling the economy module as today.
+*Why:* one code path is simpler to maintain and test than two, and the blockchain economy
+*is* the simulator's economy from now on.
+
+**D2 · Instant mining + simulation clock.** ✅ *decided*
+Ganache mines every transaction immediately into its own block (its default "instamine"
+mode). At the start of every `model.step()`, the simulator sets Ganache's clock to
+`start + step × 60 s` (`evm_setTime`), so every block mined during that step carries that
+step's timestamp. `step = (block.timestamp − start) / 60`.
+*Why not one block per step?* That would mean pausing mining and only getting results at
+the end of the step. But the simulator needs results right away: `createTask` must return
+the new task's id (so it can be assigned in the same step), and a revert ("not enough
+IEC") must be known immediately so the task is not queued. The clock gives us the same
+"which minute did this happen" information without that problem — and 1 step = 1 minute =
+60 s of chain time lines up naturally.
 
 **D3 · The simulator is the operator and the oracle.**
 The model has its own wallet (the "operator"). It is the only address allowed to call
@@ -323,25 +404,38 @@ vote — but that's a later research question, not needed now.
 only checks the choice is valid (registered, offers the service).
 *Why:* eligibility depends on battery, schedule and idle status, which live off-chain.
 
-**D5 · Reward is sampled at task creation (not assignment).**
-Escrow needs the amount up front.
-*Consequence:* moving the sampling changes the order of random draws, so a run with the
-same seed would no longer reproduce old results.
-**Recommendation:** only sample at creation when blockchain is enabled, so existing
-experiments stay reproducible with `enabled: false`.
+**D5 · Reward is sampled at task creation (not assignment).** ✅ *decided*
+Escrow needs the amount up front (see [§ 2.4.1](#241--what-is-escrow-and-why-does-it-need-the-amount-at-creation)).
+*Consequence:* moving the sampling changes the order of random draws, and since the
+blockchain is always on (D1b), **runs with the same seed will not reproduce results
+produced before the blockchain was added**. Together with D7 (unaffordable tasks are
+rejected), the existing `experiments/` results must be re-run to serve as the new baseline.
+Runs *after* the change are still fully reproducible with the same seed.
 
-**D6 · Gas is tracked, not charged (at first).**
-Each transaction records an estimated gas cost, but no IEC is deducted.
-*Why:* charging fees changes the economy (wealth slowly leaks out of the system), which is
-an interesting experiment on its own — so it should be a switch (`charge_gas: false`), not
-a default.
+**D6 · Gas is paid in test ETH, not in IEC.** ✅ *decided*
+On Ethereum every transaction must pay gas in ETH, Ganache included. At init the operator
+sends each agent wallet some test ETH (`gas_eth_per_agent`) to cover its gas for the
+whole run. Gas used is read from each transaction's receipt and recorded in the log, but
+**no IEC is ever spent on gas**.
+*Why:* charging fees in IEC changes the economy (wealth slowly leaks out of the system),
+which is an interesting experiment on its own, not a default. Keeping fees in a separate
+currency (ETH) leaves the IEC economy exactly as designed while still measuring the
+on-chain cost of each action.
 
-**D7 · Tasks the assigner can't afford are rejected.**
+**D7 · Tasks the assigner can't afford are rejected.** ✅ *decided: option (a)*
 `createTask` reverts, the task never enters the queue, and we count it in a new metric
 `Rejected_Tasks`.
-⚠️ This includes **robots that can't afford a recharge** — a broke robot would be stuck.
-Options: (a) let it happen (it's a real economic risk — interesting result), (b) give
-`BatteryCharging` a reserved budget, (c) allow recharge on credit. **Open question for you.**
+This includes **robots that can't afford a recharge**. We let that happen — it is a real
+economic risk of a robot economy and an interesting result to measure:
+- the robot stays `busy` / `awaiting_recharge` and its battery keeps draining to 0;
+- it retries `createTask` every `recharge_max_wait` steps (not every step, so the
+  transaction log isn't flooded with identical reverted transactions), in case its balance
+  changed;
+- a new metric `Stranded_Robots` counts robots that wanted a recharge but couldn't pay.
+
+Note: robots are also *assigners* of random tasks (the assigner is picked among all
+agents), so a robot can lock its money in other tasks' escrow and then be unable to pay for
+its own recharge. That's a genuine emergent effect of the design, not a bug.
 
 **D8 · Failed tasks refund the assigner.**
 Same behaviour as today (no one gets paid on failure), but now explicit and logged.
@@ -366,13 +460,14 @@ Same behaviour as today (no one gets paid on failure), but now explicit and logg
 
 | File | Change |
 | --- | --- |
-| new `blockchain/` package | `wallet.py`, `chain.py` (interface), `mock_chain.py`, later `evm_chain.py` + `contracts/*.sol` |
-| `model.py` | create chain + operator wallet; one block per step |
-| `agents.py` | each agent gets a `wallet`; `wealth` reads the balance; `_finish_task` calls complete/fail |
-| `services.py` | services registered in the registry at init |
-| `task_assignation.py` | `createTask` on generation (handle revert); `assignTask` on assignment |
-| `battery.py` | recharge task goes through `createTask`; `requeue` goes through `requeueTask` |
-| `economy.py` | `transfer_reward` replaced by escrow release (kept for `enabled: false`) |
-| `metrics.py` | new reporters: escrow locked, rejected tasks, tx count, gas |
+| new `robopreneur/blockchain/` package | `ganache.py` (start / stop Ganache), `chain.py` (chain client on `web3.py`), `wallet.py`, `contracts/*.sol` (Solidity), compiled with `py-solc-x` |
+| `core/model.py` | start Ganache, deploy contracts, operator wallet; set the chain clock every step |
+| `behaviour/agents.py` | each agent gets a `wallet`; `wealth` reads the balance; `_finish_task` calls complete/fail |
+| `tasks/services.py` | services registered in the registry at init |
+| `tasks/task_assignation.py` | `createTask` on generation (handle revert); `assignTask` on assignment |
+| `behaviour/battery.py` | recharge task goes through `createTask` (retry with cooldown if broke); `requeue` goes through `requeueTask` |
+| `economy/economy.py` | `transfer_reward` removed; becomes `settle_task()` → escrow `completeTask` / `failTask` |
+| `world/metrics.py` | new reporters: escrow locked, rejected tasks, stranded robots, tx count, gas |
 | `scripts/run_experiment.py` | also writes `transactions.csv`, `events.csv` |
-| `config.yaml` | new `blockchain:` section |
+| `requirements.txt`, `Dockerfile` | `web3`, `py-solc-x`; Node.js + `ganache` + `@openzeppelin/contracts` in the image |
+| `config.yaml`, `config/load_config.py` | new `blockchain:` section |

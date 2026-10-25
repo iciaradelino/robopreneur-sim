@@ -1,0 +1,12 @@
+{
+  "name": "robopreneur-blockchain-demo",
+  "private": true,
+  "description": "Local Ganache chain and OpenZeppelin contracts for the multi-terminal blockchain demo",
+  "scripts": {
+    "ganache": "ganache --wallet.deterministic --chain.chainId 1337 --server.port 8545"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.0.2",
+    "ganache": "7.9.2"
+  }
+}
