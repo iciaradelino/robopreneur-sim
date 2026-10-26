@@ -15,7 +15,7 @@ from chain.client import ChainClient, TxReverted
 from chain.log import Logger, iec
 from chain.wallets import AddressBook
 
-STATUS = ["-", "open", "assigned", "completed", "cancelled"]
+STATUS = ["-", "open", "assigned", "delivered", "completed", "cancelled"]
 NO_ADDRESS = "0x" + "0" * 40
 
 

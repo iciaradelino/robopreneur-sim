@@ -53,7 +53,8 @@ Type `help` in any terminal. Tab completes command names.
 | agent | `approve` | `approve`: allow the escrow to lock rewards from this wallet |
 | agent | `offer [service]` | `registerService`: list one or all of the agent's services |
 | agent | `create <service> <reward>` | `createTask`: post a task; the reward moves into escrow |
-| agent | `complete <task_id>` | `completeTask`: finish a task assigned to me; I get the reward |
+| agent | `complete <task_id>` | `completeTask`: mark a task assigned to me as done; it waits for its poster's confirmation |
+| agent | `confirm <task_id>` | `confirmTask`: confirm the work on my own delivered task; the reward goes to the worker |
 | agent | `cancel <task_id>` | `cancelTask`: withdraw my task while it's still open; full refund |
 | all | `tasks` | list every task with its status (read-only) |
 | all | `balances` | IEC and ETH of every wallet + escrow, and the total supply check (read-only) |
@@ -68,10 +69,12 @@ Type `help` in any terminal. Tab completes command names.
 | 3 | each agent | `register`, `approve`, `offer` | master logs who joined and what they offer |
 | 4 | robot_1 | `create LabCleaning 150` | master: `providers: human_1, robot_2 → assign 1 human_1`; providers see `I offer this` |
 | 5 | master | `assign 1 human_1` | human_1: `assigned to me → complete 1`; robot_1: `my task #1 → human_1` |
-| 6 | human_1 | `complete 1` | human_1 +150, robot_1 and master log the payment |
-| 7 | robot_2 | `create BatteryCharging 400` | ✗ `insufficient balance` (it only has 300); nothing changes on-chain |
-| 8 | master | `assign 1 human_2` | ✗ `task not open` (it's already completed): the contract enforces the rules |
-| 9 | any | `balances` | master + agents + escrow = 100 000 IEC ✓ conserved |
+| 6 | human_1 | `complete 1` | task delivered, reward still locked; robot_1: `delivered by human_1 → confirm 1` |
+| 7 | human_1 | `confirm 1` | ✗ `not assigner`: only the task's poster can confirm |
+| 8 | robot_1 | `confirm 1` | human_1 +150; robot_1, human_1 and master log the payment |
+| 9 | robot_2 | `create BatteryCharging 400` | ✗ `insufficient balance` (it only has 300); nothing changes on-chain |
+| 10 | master | `assign 1 human_2` | ✗ `task not open` (it's already completed): the contract enforces the rules |
+| 11 | any | `balances` | master + agents + escrow = 100 000 IEC ✓ conserved |
 
 Every transaction line shows its block, gas and hash. Every terminal is mirrored to
 `out/logs/<node>.log`.
@@ -82,7 +85,7 @@ Every transaction line shows its block, gas and hash. Every terminal is mirrored
 | --- | --- |
 | `contracts/` | `IECToken`, `AgentRegistry`, `ServiceRegistry`, `TaskEscrow` (Solidity) |
 | `master.py` | master terminal: `deploy`, `fund`, `assign`, `requeue` |
-| `agent.py` | agent terminal: `register`, `approve`, `offer`, `create`, `complete`, `cancel` |
+| `agent.py` | agent terminal: `register`, `approve`, `offer`, `create`, `complete`, `confirm`, `cancel` |
 | `chain/node.py` | shared prompt + `tasks`, `balances`, `providers`; every `cmd_*` method is a command |
 | `chain/client.py` | the only module that talks to the chain: deploy, sign and send, reverts → `TxReverted`, event listener thread |
 | `chain/compile.py` | compiles the contracts with py-solc-x |

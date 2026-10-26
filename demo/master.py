@@ -1,7 +1,5 @@
 """Master node terminal: deploys the contracts, funds the agents and assigns tasks.
 
-Usage (from demo/, with Ganache running):  python master.py
-
 The master is the operator: after `deploy` it holds the whole IEC supply, and it is the
 only wallet allowed to assign and requeue tasks. Nothing happens until you type a command;
 events from the agents' terminals are logged as they arrive.
@@ -47,6 +45,7 @@ class Master(Node):
         c.subscribe("AgentRegistry", "AgentRegistered", self.on_agent_registered)
         c.subscribe("ServiceRegistry", "ServiceRegistered", self.on_service_registered)
         c.subscribe("TaskEscrow", "TaskCreated", self.on_task_created)
+        c.subscribe("TaskEscrow", "TaskDelivered", self.on_task_delivered)
         c.subscribe("TaskEscrow", "TaskCompleted", self.on_task_completed)
         c.subscribe("TaskEscrow", "TaskCancelled", self.on_task_cancelled)
         c.listen()
@@ -85,6 +84,11 @@ class Master(Node):
         self.log("event", f"task #{a.taskId} · {self.book.name(a.assigner)} needs {a.service} · {iec(a.reward)} locked\n"
                           f"providers: {', '.join(providers) or 'nobody yet'}"
                           + (f" → assign {a.taskId} {providers[0]}" if providers else ""))
+
+    def on_task_delivered(self, e):
+        a = e.args
+        self.log("event", f"task #{a.taskId} delivered by {self.book.name(a.assignee)}"
+                          f" · waiting for {self.book.name(a.assigner)} to confirm")
 
     def on_task_completed(self, e):
         a = e.args

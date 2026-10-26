@@ -6,13 +6,13 @@ import {AgentRegistry} from "./AgentRegistry.sol";
 import {ServiceRegistry} from "./ServiceRegistry.sol";
 
 /// @title TaskEscrow - task agreements, assignment, and the money they lock
-/// @notice Lifecycle: Open -> Assigned -> Completed, Assigned -> Open (requeue),
-///         Open -> Cancelled. The reward is locked at creation and released on completion
-///         (to the assignee) or refunded on cancellation (to the assigner).
+/// @notice Lifecycle: Open -> Assigned -> Delivered -> Completed, Assigned -> Open (requeue),
+///         Open -> Cancelled. The reward is locked at creation and released to the assignee
+///         only when the assigner confirms the delivered work, or refunded on cancellation.
 ///         Assignment is decided off-chain by the operator (master node); this contract
 ///         only checks that the choice is valid.
 contract TaskEscrow {
-    enum Status { None, Open, Assigned, Completed, Cancelled }
+    enum Status { None, Open, Assigned, Delivered, Completed, Cancelled }
 
     struct Task {
         address assigner;
@@ -37,6 +37,7 @@ contract TaskEscrow {
     event TaskCreated(uint256 indexed taskId, address indexed assigner, string service, uint256 reward);
     event TaskAssigned(uint256 indexed taskId, address indexed assignee, address indexed assigner, string service);
     event TaskRequeued(uint256 indexed taskId, address indexed previousAssignee);
+    event TaskDelivered(uint256 indexed taskId, address indexed assignee, address indexed assigner);
     event TaskCompleted(uint256 indexed taskId, address indexed assignee, address indexed assigner, uint256 reward);
     event TaskCancelled(uint256 indexed taskId, address indexed assigner, uint256 refunded);
 
@@ -102,11 +103,21 @@ contract TaskEscrow {
         emit TaskRequeued(taskId, previous);
     }
 
-    /// @notice Assignee (or operator) marks the task done; the reward goes to the assignee.
+    /// @notice Assignee marks its work as done; the reward stays locked until the assigner confirms.
     function completeTask(uint256 taskId) external {
         Task storage t = tasks[taskId];
         require(t.status == Status.Assigned, "task not assigned");
-        require(msg.sender == t.assignee || msg.sender == operator, "not assignee");
+        require(msg.sender == t.assignee, "not assignee");
+
+        t.status = Status.Delivered;
+        emit TaskDelivered(taskId, t.assignee, t.assigner);
+    }
+
+    /// @notice Assigner confirms the delivered work; the reward goes to the assignee.
+    function confirmTask(uint256 taskId) external {
+        Task storage t = tasks[taskId];
+        require(t.status == Status.Delivered, "task not delivered");
+        require(msg.sender == t.assigner, "not assigner");
 
         t.status = Status.Completed;
         t.closedAt = uint64(block.timestamp);

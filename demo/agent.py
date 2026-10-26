@@ -1,9 +1,8 @@
 """Agent node terminal: one robot or human with its own wallet.
 
-Usage (from demo/):  python agent.py robot_1
-
 The agent does nothing on its own: you join the market (register, approve, offer), post
-tasks (create) and finish the ones assigned to you (complete) by typing commands.
+tasks (create), finish the ones assigned to you (complete) and confirm the work done on
+your own tasks (confirm) by typing commands.
 Every command is a transaction signed by this agent's wallet; events that concern this
 agent are logged as they arrive.
 """
@@ -35,7 +34,8 @@ class Agent(Node):
         c.subscribe("TaskEscrow", "TaskCreated", self.on_task_created)
         c.subscribe("TaskEscrow", "TaskAssigned", self.on_assigned_to_me, assignee=me)
         c.subscribe("TaskEscrow", "TaskAssigned", self.on_my_task_assigned, assigner=me)
-        c.subscribe("TaskEscrow", "TaskCompleted", self.on_my_task_completed, assigner=me)
+        c.subscribe("TaskEscrow", "TaskDelivered", self.on_my_task_delivered, assigner=me)
+        c.subscribe("TaskEscrow", "TaskCompleted", self.on_my_work_confirmed, assignee=me)
         c.subscribe("TaskEscrow", "TaskRequeued", self.on_requeued_from_me, previousAssignee=me)
         c.listen()
 
@@ -69,9 +69,14 @@ class Agent(Node):
         self.log("task", f"posted task #{task_id} · reward locked in escrow · balance {self.balance()}")
 
     def cmd_complete(self, task_id):
-        """mark a task assigned to me as done - I get the reward"""
+        """mark a task assigned to me as done - its poster then confirms it"""
         self.client.send_tx("TaskEscrow", "completeTask", number(task_id, "task id"))
-        self.log("paid", f"task #{task_id} completed · balance {self.balance()}")
+        self.log("task", f"task #{task_id} delivered · waiting for its poster to confirm")
+
+    def cmd_confirm(self, task_id):
+        """confirm the work on one of my tasks - the reward goes to the worker"""
+        self.client.send_tx("TaskEscrow", "confirmTask", number(task_id, "task id"))
+        self.log("paid", f"task #{task_id} completed · reward released to the worker")
 
     def cmd_cancel(self, task_id):
         """withdraw one of my tasks nobody has taken yet - full refund"""
@@ -97,9 +102,15 @@ class Agent(Node):
     def on_my_task_assigned(self, e):
         self.log("event", f"my task #{e.args.taskId} {e.args.service} → {self.book.name(e.args.assignee)}")
 
-    def on_my_task_completed(self, e):
+    def on_my_task_delivered(self, e):
         a = e.args
-        self.log("paid", f"my task #{a.taskId} done by {self.book.name(a.assignee)} · paid {iec(a.reward)}")
+        self.log("event", f"my task #{a.taskId} delivered by {self.book.name(a.assignee)}"
+                          f"\n→ confirm {a.taskId}")
+
+    def on_my_work_confirmed(self, e):
+        a = e.args
+        self.log("paid", f"task #{a.taskId} confirmed by {self.book.name(a.assigner)} · paid {iec(a.reward)}"
+                         f" · balance {self.balance()}")
 
     def on_requeued_from_me(self, e):
         self.log("warn", f"the master took task #{e.args.taskId} back")
