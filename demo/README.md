@@ -26,7 +26,6 @@ if your system Node is newer. The first `deploy` downloads solc 0.8.24 into `~/.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start-demo.ps1        # from demo/
-powershell -ExecutionPolicy Bypass -File demo\start-demo.ps1     # from the repo root
 ```
 
 This opens every node in its own window (move and resize them freely), starting tiled:
@@ -93,9 +92,3 @@ Every transaction line shows its block, gas and hash. Every terminal is mirrored
 | `demo_config.yaml` | agents, their services, starting IEC, chain settings |
 | `start-demo.ps1` | opens each node in its own Windows Terminal window |
 
-## Troubleshooting
-
-- **`Port 8545 is already in use`**: an old Ganache is still running. Close it. If it was
-  started from a script, its `node.exe` may outlive the terminal.
-- **Two copies of one agent**: two processes signing with the same key break each other's
-  nonces. Run each agent once.
