@@ -6,6 +6,12 @@ A small, standalone demo of the blockchain layer described in
 Each agent and the master node runs as its **own Python process in its own terminal**. They
 coordinate only through **transactions** and **events** on a local Ganache chain.
 
+> **Update (implemented):** the demo is **fully manual**. Nothing happens automatically:
+> the master `deploy`s, `fund`s and `assign`s, and agents `register`, `create`, `complete`
+> or `fail`, each by typing a command in its own terminal. The automatic posting,
+> assignment, timeouts and timed execution described in §5 below were dropped.
+> Commands and demo script: [demo/README.md](../demo/README.md).
+
 ---
 
 ## 1 · What the demo shows
@@ -283,8 +289,16 @@ without the simulator code.
 - **EVM version:** Ganache v7 supports up to *Shanghai*. solc ≥ 0.8.25 targets *Cancun* by
   default, so compile with `evm_version="shanghai"` (or `paris`). Otherwise deploys fail
   with `invalid opcode`.
-- **Event polling, not websockets:** `web3` HTTP filters (`create_filter` +
-  `get_new_entries`) are the most reliable option on Windows with Ganache.
+- **Ganache needs Node ≤ 20:** on newer Node its native web server (µWS) doesn't load, and
+  the fallback server leaks connections and stalls for ~30 s under the demo's load. Fixed
+  by a local `node@20` npm dependency that `npm run ganache` picks up.
+- **Event polling, not websockets:** each process polls `get_logs` over HTTP from the last
+  block it saw and delivers events in chain order. No server-side filters can expire.
+- **Nonces are tracked locally:** Ganache's `pending` transaction count can lag behind.
+  Each key is used by exactly one process, so the client counts its own nonces.
+- **On Windows the venv's `python.exe` is a launcher** that starts the real interpreter
+  as a child. When you stop processes from a script, kill by command line
+  (`agent.py` / `master.py`), not by the launcher's path.
 - **Startup order:** agents must wait for `deployments.json` **and** for their ETH funding
   before sending anything, or `registerAgent` fails for lack of gas.
 - **Keys:** derived keys are for the local demo only. Never reuse them on a real network.

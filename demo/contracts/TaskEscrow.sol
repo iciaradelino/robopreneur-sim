@@ -6,13 +6,13 @@ import {AgentRegistry} from "./AgentRegistry.sol";
 import {ServiceRegistry} from "./ServiceRegistry.sol";
 
 /// @title TaskEscrow - task agreements, assignment, and the money they lock
-/// @notice Lifecycle: Open -> Assigned -> Completed | Failed, Assigned -> Open (requeue),
+/// @notice Lifecycle: Open -> Assigned -> Completed, Assigned -> Open (requeue),
 ///         Open -> Cancelled. The reward is locked at creation and released on completion
-///         (to the assignee) or refunded on failure / cancellation (to the assigner).
+///         (to the assignee) or refunded on cancellation (to the assigner).
 ///         Assignment is decided off-chain by the operator (master node); this contract
 ///         only checks that the choice is valid.
 contract TaskEscrow {
-    enum Status { None, Open, Assigned, Completed, Failed, Cancelled }
+    enum Status { None, Open, Assigned, Completed, Cancelled }
 
     struct Task {
         address assigner;
@@ -38,7 +38,6 @@ contract TaskEscrow {
     event TaskAssigned(uint256 indexed taskId, address indexed assignee, address indexed assigner, string service);
     event TaskRequeued(uint256 indexed taskId, address indexed previousAssignee);
     event TaskCompleted(uint256 indexed taskId, address indexed assignee, address indexed assigner, uint256 reward);
-    event TaskFailed(uint256 indexed taskId, address indexed assignee, address indexed assigner, uint256 refunded);
     event TaskCancelled(uint256 indexed taskId, address indexed assigner, uint256 refunded);
 
     modifier onlyOperator() {
@@ -115,20 +114,6 @@ contract TaskEscrow {
 
         require(token.transfer(t.assignee, t.reward), "transfer failed");
         emit TaskCompleted(taskId, t.assignee, t.assigner, t.reward);
-    }
-
-    /// @notice Assignee (or operator) reports failure; the reward goes back to the assigner.
-    function failTask(uint256 taskId) external {
-        Task storage t = tasks[taskId];
-        require(t.status == Status.Assigned, "task not assigned");
-        require(msg.sender == t.assignee || msg.sender == operator, "not assignee");
-
-        t.status = Status.Failed;
-        t.closedAt = uint64(block.timestamp);
-        totalLocked -= t.reward;
-
-        require(token.transfer(t.assigner, t.reward), "transfer failed");
-        emit TaskFailed(taskId, t.assignee, t.assigner, t.reward);
     }
 
     /// @notice Assigner withdraws a task nobody has taken yet; full refund.
