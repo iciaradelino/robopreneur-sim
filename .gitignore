@@ -1,15 +1,29 @@
+# python
 .venv/
 venv/
 __pycache__/
 *.pyc
 
+# node
+node_modules/
+
+# blockchain demo: generated while running (deployments.json, logs)
+demo/out/
+
 # experiment results
-experiments/**/model_data.csv
-experiments/**/agent_data.csv
-experiments/**/summary.csv
-experiments/**/*.png
 experiments/**/*.csv
+experiments/**/*.png
 
 # docker exports
 *.tar.gz
 *.tar
+
+# secrets
+.env
+.env.*
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
