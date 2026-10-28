@@ -1,0 +1,42 @@
+# blockchain demo configuration (independent from the simulator's config.yaml)
+
+chain:
+  rpc: http://127.0.0.1:8545
+  seed: 32                    # agent wallets are derived from seed + agent name
+  # master = account 0 of `ganache --wallet.deterministic` (well-known test key, local only)
+  master_key: "0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d"
+  gas_eth_per_agent: 10       # test ETH `fund` sends an agent for gas
+  poll_interval_s: 0.5        # how often each terminal checks for new events
+  solc_version: 0.8.24
+  evm_version: shanghai       # ganache v7 does not support cancun
+
+token:
+  total_supply: 100000        # IEC, all minted to the master by `deploy`
+
+agents:                       # initial_wealth: IEC that `fund` sends by default
+  robot_1:
+    kind: robot
+    initial_wealth: 2000
+    services: [LabCleaning, ItemTransport, SurveillancePatrol]
+  robot_2:
+    kind: robot
+    initial_wealth: 300
+    services: [LabCleaning, ComponentRestock]
+  human_1:
+    kind: human
+    initial_wealth: 2000
+    services: [BatteryCharging, LabCleaning, SystemUpdate]
+  human_2:
+    kind: human
+    initial_wealth: 2000
+    services: [BatteryCharging, PowerSupply, FunctionalityTest]
+
+services:                     # service: category
+  BatteryCharging: maintenance
+  LabCleaning: cleaning
+  ItemTransport: logistics
+  PowerSupply: maintenance
+  SystemUpdate: it
+  FunctionalityTest: it
+  SurveillancePatrol: security
+  ComponentRestock: logistics
