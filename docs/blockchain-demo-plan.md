@@ -147,7 +147,7 @@ demo/
 │   └── log.py              coloured, prefixed per-node logger
 ├── master.py
 ├── agent.py
-├── start-demo.ps1          opens all terminals in Windows Terminal
+├── start-demo.sh           opens all terminals as tmux panes (WSL)
 └── out/                    (gitignored) deployments.json, logs/*.log
 ```
 
@@ -243,8 +243,8 @@ Same functions as in [blockchain-briefing.md](blockchain-briefing.md#smart-contr
 ### Phase 5 · Logging and launcher (½ day)
 - `chain/log.py`: one colour per node, prefix `[HH:MM:SS][robot_1][tx]`. Lines are mirrored
   to `out/logs/<node>.log`.
-- `start-demo.ps1`: opens Windows Terminal tabs/panes with
-  `wt new-tab ... ; split-pane ...`: Ganache → master (waits for RPC) → each agent.
+- `start-demo.sh`: opens a tmux session with one pane per node
+  (`tmux split-window ...`): Ganache → master (waits for RPC) → each agent.
 - `stop`: closing Ganache wipes the chain, since there's a fresh chain every run.
 
 ### Phase 6 · Demo script and rehearsal (½ day)

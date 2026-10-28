@@ -9,13 +9,17 @@ Nothing here is imported by the simulator.
 
 ## Setup (once)
 
-Requires Node.js and Python 3.11+. From `demo/`:
+Runs in bash under WSL (Ubuntu). Requires Node.js, Python 3.11+ with `venv`, and tmux
+(`sudo apt install nodejs npm python3-venv tmux`). From `demo/`, inside WSL:
 
 ```bash
 npm install
-python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
+
+`node_modules/` and `.venv/` are platform-specific: if they were created from Windows,
+delete them and run these steps again inside WSL.
 
 `npm install` also installs a local **Node 20** (the `node` package) that `npm run ganache`
 uses automatically. Ganache's native web server doesn't support newer Node versions. On
@@ -24,20 +28,22 @@ if your system Node is newer. The first `deploy` downloads solc 0.8.24 into `~/.
 
 ## Start the terminals
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start-demo.ps1        # from demo/
+```bash
+./start-demo.sh        # from demo/, inside WSL
 ```
 
-This opens every node in its own window (move and resize them freely), starting tiled:
+This opens a tmux session with every node in its own pane, tiled:
 
 ```
 | chain   | master  | robot_1 |
 | robot_2 | human_1 | human_2 |
 ```
 
-Or start them by hand from `demo/`: `npm run ganache`, `.venv/Scripts/python master.py`,
-`.venv/Scripts/python agent.py robot_1` (and so on). Agents wait until the master has
-deployed, then show their prompt. Closing Ganache wipes the chain, so every run starts fresh.
+Move between panes with `Ctrl-b` + arrow keys and zoom one with `Ctrl-b z`. Or start them
+by hand in separate terminals from `demo/`: `npm run ganache`, `.venv/bin/python master.py`,
+`.venv/bin/python agent.py robot_1` (and so on). Agents wait until the master has deployed,
+then show their prompt. Closing Ganache wipes the chain, so every run starts fresh:
+`tmux kill-session -t robopreneur-demo` stops everything.
 
 ## Commands
 
@@ -93,5 +99,5 @@ Every transaction line shows its block, gas and hash. Every terminal is mirrored
 | `chain/log.py` | coloured per-node terminal log |
 | `chain/config.py` | paths and `demo_config.yaml` loading |
 | `demo_config.yaml` | agents, their services, starting IEC, chain settings |
-| `start-demo.ps1` | opens each node in its own Windows Terminal window |
+| `start-demo.sh` | opens each node in its own tmux pane |
 
