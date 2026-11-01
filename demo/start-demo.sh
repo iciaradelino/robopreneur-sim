@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Opens every node of the demo in its own tmux pane, tiled 3x2:
+# Opens every node of the demo in its own Windows Terminal window, roughly tiled 3x2:
 #
 #   | chain   | master  | robot_1 |
 #   | robot_2 | human_1 | human_2 |
 #
-# Move between panes with Ctrl-b + arrow keys, zoom one with Ctrl-b z.
-# Killing the session (tmux kill-session -t robopreneur-demo) wipes the chain.
+# Each node runs in its own tmux session on a private socket, so closing a window only
+# detaches it: reopen one with  tmux -L robopreneur-demo attach -t <node>.
+# tmux -L robopreneur-demo kill-server stops everything and wipes the chain.
 #
 # Usage:  ./start-demo.sh   (from demo/, inside WSL)
 
@@ -13,7 +14,8 @@ set -euo pipefail
 
 demo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 py="$demo/.venv/bin/python"
-session="robopreneur-demo"
+sock="robopreneur-demo"
+tm() { tmux -L "$sock" "$@"; }
 
 if ! command -v tmux >/dev/null; then
     echo "tmux not found - install it with: sudo apt install tmux" >&2
@@ -27,38 +29,46 @@ if (exec 3<>/dev/tcp/127.0.0.1/8545) 2>/dev/null; then
     echo "Port 8545 is already in use - stop the running Ganache first, the demo needs a fresh chain." >&2
     exit 1
 fi
-if tmux has-session -t "$session" 2>/dev/null; then
-    echo "tmux session '$session' already exists - attach with: tmux attach -t $session" >&2
+if tm has-session 2>/dev/null; then
+    echo "The demo is already running - stop it with: tmux -L $sock kill-server" >&2
     exit 1
 fi
 
-# Build the 3x2 grid: split into two rows, then each row into three equal columns.
-new_pane() { tmux split-window -d -c "$demo" -P -F '#{pane_id}' "$@"; }
-chain=$(tmux new-session -d -s "$session" -c "$demo" -P -F '#{pane_id}')
-robot_2=$(new_pane -v -t "$chain")
-master=$(new_pane -h -l 67% -t "$chain")
-robot_1=$(new_pane -h -l 50% -t "$master")
-human_1=$(new_pane -h -l 67% -t "$robot_2")
-human_2=$(new_pane -h -l 50% -t "$human_1")
+nodes=(chain master robot_1 robot_2 human_1 human_2)
+declare -A cmds=(
+    [chain]="npm run ganache"
+    [master]="'$py' master.py"
+    [robot_1]="'$py' agent.py robot_1"
+    [robot_2]="'$py' agent.py robot_2"
+    [human_1]="'$py' agent.py human_1"
+    [human_2]="'$py' agent.py human_2"
+)
 
-# Pane titles come from a pane option, so the shell's own title escapes can't overwrite them
-tmux set-option -t "$session" pane-border-status top
-tmux set-option -t "$session" pane-border-format ' #{@node} '
+# Typed into a shell rather than run directly, so the shell stays open after the command exits
+for node in "${nodes[@]}"; do
+    tm new-session -d -s "$node" -n "$node" -c "$demo"
+    tm send-keys -t "$node" "${cmds[$node]}" Enter
+done
+tm set-option -g status-left " #S "
 
-run() {  # run <pane> <title> <command>: the shell stays open after the command exits
-    tmux set-option -p -t "$1" @node "$2"
-    tmux send-keys -t "$1" "$3" Enter
-}
-run "$chain"   chain   "npm run ganache"
-run "$master"  master  "'$py' master.py"
-run "$robot_1" robot_1 "'$py' agent.py robot_1"
-run "$robot_2" robot_2 "'$py' agent.py robot_2"
-run "$human_1" human_1 "'$py' agent.py human_1"
-run "$human_2" human_2 "'$py' agent.py human_2"
-
-tmux select-pane -t "$master"
-if [[ -n "${TMUX:-}" ]]; then
-    tmux switch-client -t "$session"
-else
-    tmux attach -t "$session"
+if ! command -v wt.exe >/dev/null || [[ -z "${WSL_DISTRO_NAME:-}" ]]; then
+    echo "Windows Terminal not found - attaching here instead, switch nodes with Ctrl-b s." >&2
+    exec tmux -L "$sock" attach -t master
 fi
+
+# Tile the windows over the primary screen's working area (falls back to wt's default spot)
+read -r sx sy sw sh < <(powershell.exe -NoProfile -Command \
+    'Add-Type -AssemblyName System.Windows.Forms; $a = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; "$($a.X) $($a.Y) $($a.Width) $($a.Height)"' \
+    2>/dev/null | tr -d '\r') || true
+
+for i in "${!nodes[@]}"; do
+    node="${nodes[$i]}"
+    pos=()
+    if [[ -n "${sh:-}" ]]; then
+        pos=(--pos "$((sx + i % 3 * sw / 3)),$((sy + i / 3 * sh / 2))")
+    fi
+    # -w new: a separate window per node; "--" stops wt parsing the wsl/tmux flags as its own
+    wt.exe -w new "${pos[@]}" new-tab --title "$node" --suppressApplicationTitle \
+        -- wsl.exe -d "$WSL_DISTRO_NAME" -- tmux -L "$sock" attach -t "$node"
+    sleep 0.3  # keep the windows opening in order
+done

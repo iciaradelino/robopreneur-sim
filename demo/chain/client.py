@@ -4,6 +4,7 @@ Each process (master or agent) owns one ChainClient with its own key, so every
 transaction it sends is signed by that wallet and nonces never collide between terminals.
 """
 
+import copy
 import json
 import re
 import threading
@@ -46,15 +47,25 @@ class ChainClient:
         self.cfg = cfg
         self.account = account
         self.address = account.address
+        self.signer = None  # set on a client signing for someone else, to label its tx logs
         self.log = log
         self.book = book
         self.contracts = {}
         self.subscriptions = []
         self.nonce = None  # tracked locally: Ganache's "pending" count can lag behind
+        self.tx_lock = threading.RLock()  # several threads send: one transaction at a time per wallet
 
         self.w3 = Web3(Web3.HTTPProvider(cfg["chain"]["rpc"], request_kwargs={"timeout": 10}))
         self.wait_until(self.w3.is_connected, f"waiting for the chain at {cfg['chain']['rpc']} …", 1)
         self.log("init", f"connected to chain {self.w3.eth.chain_id} · block {self.w3.eth.block_number}")
+
+    def as_wallet(self, account, signer=None):
+        """A client signing with `account`, sharing this one's connection and contracts."""
+        other = copy.copy(self)
+        other.account, other.address, other.nonce, other.signer = account, account.address, None, signer
+        other.subscriptions = []
+        other.tx_lock = threading.RLock()
+        return other
 
     def wait_until(self, condition, message, interval=0.5):
         """Block until condition() is true, logging `message` once while waiting."""
@@ -72,7 +83,8 @@ class ChainClient:
 
     def deploy(self, name, artifact, *args):
         factory = self.w3.eth.contract(abi=artifact["abi"], bytecode=artifact["bytecode"])
-        receipt = self._sign_and_send(factory.constructor(*args).build_transaction(self._tx_base()))
+        with self.tx_lock:
+            receipt = self._sign_and_send(factory.constructor(*args).build_transaction(self._tx_base()))
         self.contracts[name] = self.w3.eth.contract(address=receipt.contractAddress, abi=artifact["abi"])
         self.log("deploy", f"{name:<16} {receipt.contractAddress} · block {receipt.blockNumber}"
                            f" · gas {receipt.gasUsed:,}")
@@ -125,10 +137,13 @@ class ChainClient:
     def send_tx(self, contract, fn_name, *args):
         """Sign and send contract.fn_name(*args) from this wallet. Raises TxReverted."""
         call = f"{contract}.{fn_name}({', '.join(fmt_arg(a) for a in args)})"
+        if self.signer:
+            call = f"{self.signer}: {call}"
         fn = self.contract(contract).functions[fn_name](*args)
         try:
             # gas estimation runs the call first, so a broken rule is caught before sending
-            receipt = self._sign_and_send(fn.build_transaction(self._tx_base()))
+            with self.tx_lock:
+                receipt = self._sign_and_send(fn.build_transaction(self._tx_base()))
         except (ContractLogicError, Web3RPCError, TxReverted) as e:
             reason = e.reason if isinstance(e, TxReverted) else revert_reason(e)
             self.log("revert", f"✗ {call} → {reason}")
@@ -138,11 +153,12 @@ class ChainClient:
         return receipt
 
     def send_eth(self, to, amount_eth):
-        tx = self._tx_base() | {
-            "to": to, "value": Web3.to_wei(amount_eth, "ether"), "gas": 21000,
-            "gasPrice": self.w3.eth.gas_price, "chainId": self.w3.eth.chain_id,
-        }
-        receipt = self._sign_and_send(tx)
+        with self.tx_lock:
+            tx = self._tx_base() | {
+                "to": to, "value": Web3.to_wei(amount_eth, "ether"), "gas": 21000,
+                "gasPrice": self.w3.eth.gas_price, "chainId": self.w3.eth.chain_id,
+            }
+            receipt = self._sign_and_send(tx)
         self.log("tx", f"✓ send {amount_eth} ETH → {self.book.name(to)} (gas money) · block {receipt.blockNumber}")
 
     def call(self, contract, fn_name, *args):

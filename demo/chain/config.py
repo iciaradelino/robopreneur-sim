@@ -5,6 +5,7 @@ import yaml
 DEMO_DIR = Path(__file__).resolve().parent.parent
 OUT_DIR = DEMO_DIR / "out"
 DEPLOYMENTS_PATH = OUT_DIR / "deployments.json"
+AUTO_PATH = OUT_DIR / "auto.json"  # written by the master's `start` / `stop`
 
 
 def load_config(path=DEMO_DIR / "demo_config.yaml"):
