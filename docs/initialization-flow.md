@@ -6,7 +6,7 @@
 | 2 | **Arrancar Ganache y desplegar smart contracts** (deploy) | `blockchain/ganache.py` + `blockchain/chain.py` ← *moved up* | once |
 | 3 | **Crear agentes** | `RobopreneurModel.initialize_agents()` | once |
 | 4 | **Crear wallets** (+ gas ETH, + register agent, + fund) | `behaviour/agents.py` + `blockchain/wallet.py` | once |
-| 5 | **Registrar servicios** | `behaviour/agents.py` → ServiceRegistry | once |
+| 5 | **Registrar servicios** (con precio) | `behaviour/agents.py` → ServiceRegistry | once |
 | 6 | **Cerrar el setup** + first metrics | `core/model.py` | once |
 | 7 | **Entran tareas de cada agente con su wallet** | `model.step()` loop | every step |
 
@@ -44,8 +44,9 @@ flowchart TD
     C4[deploy IECToken\nowner = operator]:::contract
     C5[deploy AgentRegistry]:::contract
     C6[deploy ServiceRegistry\nknows AgentRegistry]:::contract
-    C7[deploy TaskEscrow\nknows token · both registries · operator]:::contract
-    C1 --> C2 --> C3 --> C3b --> C4 --> C5 --> C6 --> C7
+    C7[deploy TaskManager\ntask registry + escrow\nknows token · both registries · operator]:::contract
+    C8[deploy Organization\nowner = operator\nwire it to TaskManager · ServiceRegistry]:::contract
+    C1 --> C2 --> C3 --> C3b --> C4 --> C5 --> C6 --> C7 --> C8
   end
 
   %% ═══════════════════════════════════════════════════════════════
@@ -67,14 +68,14 @@ flowchart TD
     W1b[4b · send test ETH for gas\nsigned by operator]:::chain
     W2[4c · registerAgent\nsigned by agent wallet]:::contract
     W3[4d · mint initial_wealth IEC\nsigned by operator]:::contract
-    W4[4e · approve TaskEscrow\nsigned by agent wallet]:::contract
+    W4[4e · approve TaskManager\nsigned by agent wallet]:::contract
     W1 --> W1b --> W2 --> W3 --> W4
   end
 
   %% ═══════════════════════════════════════════════════════════════
   subgraph P5["5 · registrar servicios  —  per agent × service"]
     direction TB
-    R1[registerService\nname · category · skill × 1000\nsigned by agent wallet]:::contract
+    R1[registerService\nname · category · skill × 1000 · price\nsigned by agent wallet]:::contract
   end
 
   %% ═══════════════════════════════════════════════════════════════
@@ -89,17 +90,17 @@ flowchart TD
   subgraph P7["7 · entran tareas  —  model.step every step"]
     direction TB
     L0[set chain clock\n= start + step × 60 s]:::chain
-    L1[generate_tasks\nassigner wallet → createTask\nreward locked in escrow]:::loop
-    L2[agents step\nrecharge → createTask\nfinish → completeTask / failTask\ninterrupt → requeueTask]:::loop
-    L3[assign_tasks\noperator → assignTask]:::loop
+    L1[generate_tasks\nassigner wallet → createTask\nreward locked in escrow\nOrganization assigns in the same tx]:::loop
+    L2[agents step\nrecharge → createTask\nfinish → completeTask / failTask\ninterrupt → unassignTask]:::loop
+    L3[availability changes\noperator → setAvailable\nschedule · battery · charging]:::loop
     L4[collect metrics]:::loop
     L0 --> L1 --> L2 --> L3 --> L4
     L4 -->|next step| L0
   end
 
   S5 --> C1
-  C7 --> A1
-  C7 --> A2
+  C8 --> A1
+  C8 --> A2
   A4 --> W1
   W4 --> R1
   R1 --> G1
@@ -140,12 +141,13 @@ can't be changed.
 | --- | --- | --- |
 | 2a | **start a fresh Ganache** (`--wallet.seed`, `--chain.time`) | the "ground" everything else is built on. Fresh per run → no leftovers from previous runs; seeded → same accounts every run |
 | 2b | **connect with `web3.py`**, set the clock to step 0 | the chain client (`chain.py`) is the only module that talks to Ganache |
-| 2c | **operator wallet** = Ganache's first account | someone must deploy the contracts and later report task outcomes (the oracle, D3). That's the simulator itself. Ganache pre-loads this account with test ETH to pay gas |
+| 2c | **operator wallet** = Ganache's first account | someone must deploy the contracts and later report task outcomes and agent availability (the oracle, D3). That's the simulator itself. Ganache pre-loads this account with test ETH to pay gas |
 | 2d | **compile** the Solidity contracts (`py-solc-x`) | Ganache runs bytecode, not Solidity source |
 | 2e | **IECToken** | no dependencies — it's just the currency |
 | 2f | **AgentRegistry** | no dependencies — the member list |
 | 2g | **ServiceRegistry** | needs AgentRegistry, to refuse services from non-members |
-| 2h | **TaskEscrow** | needs everything: the token (to hold money), both registries (to check assignees), and the operator address (who may complete/fail tasks) |
+| 2h | **TaskManager** (the task registry, with its escrow) | needs everything: the token (to hold money), both registries (to check assignees), and the operator address (who may complete/fail tasks) |
+| 2i | **Organization**, then wire it: `setTaskManager`, `setServiceRegistry` on it, `setOrganization` on TaskManager and ServiceRegistry | assigns the tasks (D4). It and the two contracts it drives call each other, so each is told the other's address once both exist (4 wiring transactions). The operator owns it |
 
 > **Why this exact order?** A contract that checks another contract must be told *where*
 > that contract lives when it is deployed. So dependencies go first — like building
@@ -182,7 +184,7 @@ For each agent, five things, in this order:
 | **4b · send test ETH** (`gas_eth_per_agent`) | yes | operator | the agent can now pay gas for its own transactions |
 | **4c · registerAgent**(`agent_id`, `kind`) | yes | the agent | AgentRegistry now lists this address as `human` or `robot` |
 | **4d · mint**(`address`, `initial_wealth`) | yes | operator | the agent's wallet goes from 0 → 2000 IEC |
-| **4e · approve**(TaskEscrow, unlimited) | yes | the agent | the escrow contract is allowed to pull IEC from this wallet when this agent creates a task |
+| **4e · approve**(TaskManager, unlimited) | yes | the agent | the TaskManager is allowed to pull IEC from this wallet into escrow when this agent creates a task |
 
 > **Why does the agent need ETH?** On Ethereum (Ganache included) every transaction pays a
 > small fee called **gas**, and gas is paid in **ETH**, not in our IEC token. On Ganache ETH
@@ -214,19 +216,21 @@ For each agent, five things, in this order:
 For each agent, for each service in its config:
 
 ```
-registerService(name, category, skill)   signed by the agent's wallet
-  e.g. robot_1_0 → registerService("LabCleaning", "cleaning", 950)
+registerService(name, category, skill, price)   signed by the agent's wallet
+  e.g. robot_1_0 → registerService("LabCleaning", "cleaning", 950, 11000)   # 110.00 IEC
 ```
 
 - The ServiceRegistry checks the sender is a registered agent (that's why phase 4 comes
   first).
-- `skill` is stored ×1000 (`0.95 → 950`) because blockchains have no decimals.
+- `skill` is stored ×1000 (`0.95 → 950`) because blockchains have no decimals; `price` is in
+  IEC base units (2 decimals). The Organization assigns each task to the cheapest provider
+  whose price fits its reward.
 - The *definition* of the service (reward median, phases, waypoints) stays in
   `config.yaml` — the registry only says **who offers what**.
 
-> **Why register services before any task exists?** When a task is assigned, the escrow
-> checks the assignee actually offers that service. If services weren't registered yet,
-> every assignment would be rejected.
+> **Why register services before any task exists?** The Organization assigns a task the
+> moment it is registered, by looking up who offers that service. If services weren't
+> registered yet, every task would just wait.
 
 ---
 
@@ -246,19 +250,20 @@ registerService(name, category, skill)   signed by the agent's wallet
 
 ### Phase 7 · Entran tareas de cada agente con su wallet
 
-This is the normal step loop. Inside it, the smart contracts do their real work. Each
+This is the normal step loop. Inside it, the smart contracts do their real work, including
+**deciding who gets each task** (the Organization contract, D4). Each
 transaction is mined instantly (its own block), and the simulator gets the result back
 before moving on:
 
 | Step-loop moment | Who | Transaction | Contract effect |
 | --- | --- | --- | --- |
 | start of step | operator | — (`evm_setTime`) | Ganache clock = `start + step × 60 s`, so every transaction below is stamped with this step |
-| `generate_tasks()` | random **assigner** agent | `createTask(service, reward)` | reward moves **wallet → escrow**. If not enough IEC → reverts → task is **not** posted, `Rejected_Tasks += 1` |
-| robot `update_battery()` hits threshold | the **robot** | `createTask(BatteryCharging, reward)` | same; if it reverts the robot is **stranded** and retries after `recharge_max_wait` steps (D7) |
-| `assign_tasks()` | operator | `assignTask(id, assignee)` | checks assignee is registered and offers that service |
-| task interrupted (schedule / low battery) | operator | `requeueTask(id)` | back to `Open`, money stays locked |
-| `_finish_task(success=True)` → `economy.settle_task` | operator | `completeTask(id)` | **escrow → worker** |
-| `_finish_task(success=False)` → `economy.settle_task` | operator | `failTask(id)` | **escrow → assigner** (refund) |
+| `generate_tasks()` | random **assigner** agent | `createTask(service, category, reward)` | reward moves **wallet → escrow**, and in the same transaction the Organization **assigns the task** to the cheapest available provider with `price ≤ reward`, or queues it. The simulator starts the chosen agent from the `TaskAssigned` event. If not enough IEC → reverts → task is **not** posted, `Rejected_Tasks += 1` |
+| robot `update_battery()` hits threshold | the **robot** | `createTask(BatteryCharging, maintenance, reward)` | same; if it reverts the robot is **stranded** and retries after `recharge_max_wait` steps (D7) |
+| agent goes off / on shift, robot needs / finishes a recharge | operator | `setAvailable(agent, false / true)` | the Organization skips unavailable agents; becoming available hands the agent the best waiting task it can do |
+| task interrupted (schedule / low battery) | operator | `unassignTask(id)` (Organization → `requeueTask`) | back to `Open`, money stays locked; reassigned to another provider at once if one is available |
+| `_finish_task(success=True)` → `economy.settle_task` | operator | `completeTask(id)` | **escrow → worker** (its price) and the rest → assigner; the worker is free and may get a waiting task in the same transaction |
+| `_finish_task(success=False)` → `economy.settle_task` | operator | `failTask(id)` | **escrow → assigner** (refund); the worker is free, as above |
 | `datacollector.collect()` | — | — (read only) | balances, escrow total, tx count, gas |
 
 ---
@@ -274,13 +279,14 @@ sequenceDiagram
   participant T as IECToken
   participant AR as AgentRegistry
   participant SR as ServiceRegistry
-  participant E as TaskEscrow
+  participant E as TaskManager
+  participant O as Organization
   participant A as Agent + Wallet
 
   Note over M: 1 · sistema y config
   M->>M: load config · seed RNG · build world
 
-  Note over M,E: 2 · arrancar ganache y desplegar smart contracts
+  Note over M,O: 2 · arrancar ganache y desplegar smart contracts
   M->>G: start fresh Ganache (seed, fixed start time)
   M->>C: connect (web3.py), clock = step 0
   C->>G: operator = first pre-funded account
@@ -291,8 +297,10 @@ sequenceDiagram
   G-->>AR: live
   C->>G: deploy ServiceRegistry(AgentRegistry)
   G-->>SR: live
-  C->>G: deploy TaskEscrow(token, registries, operator)
+  C->>G: deploy TaskManager(token, registries, operator)
   G-->>E: live
+  C->>G: deploy Organization, wire it to TaskManager and ServiceRegistry
+  G-->>O: live
 
   Note over M,A: 3 · crear agentes
   M->>A: new HumanAgent / RobotAgent, place in world
@@ -304,10 +312,10 @@ sequenceDiagram
   AR-->>C: event AgentRegistered
   M->>T: mint(agent, initial_wealth)  [operator]
   T-->>C: event Transfer(0x0 → agent, 2000)
-  A->>T: approve(TaskEscrow, unlimited)
+  A->>T: approve(TaskManager, unlimited)
 
   Note over M,A: 5 · registrar servicios (per agent × service)
-  A->>SR: registerService(name, category, skill)
+  A->>SR: registerService(name, category, skill, price)
   SR->>AR: isRegistered(agent)?
   SR-->>C: event ServiceRegistered
 
@@ -317,15 +325,17 @@ sequenceDiagram
 
   Note over M,A: 7 · entran tareas (every step)
   M->>G: set clock = start + step × 60 s
-  A->>E: createTask(service, reward)  [assigner]
-  E->>T: transferFrom(assigner → escrow, reward)
-  E-->>C: events TaskCreated, Transfer
-  M->>E: assignTask(id, worker)  [operator]
-  E->>SR: worker offers service?
-  E-->>C: event TaskAssigned
+  A->>E: createTask(service, category, reward)  [assigner]
+  E->>T: transferFrom(assigner → TaskManager, reward)
+  E->>O: onTaskRegistered(id)  [same transaction]
+  O->>SR: cheapest available provider, price ≤ reward?
+  O->>E: assignTask(id, worker, price)
+  E-->>C: events TaskCreated, Transfer, TaskAssigned
+  C-->>M: worker = TaskAssigned.assignee → start it on the task
   Note over A: … worker travels and dwells (off-chain) …
   M->>E: completeTask(id)  [operator]
-  E->>T: transfer(escrow → worker, reward)
+  E->>T: transfer(TaskManager → worker, price) · rest → assigner
+  E->>O: onTaskEnded(id) → worker free, best waiting task
   E-->>C: events TaskCompleted, Transfer
 ```
 
@@ -337,19 +347,20 @@ Default config: 2 humans (6 services each), 2 robots (4 services each), 2000 IEC
 
 **Balances**
 
-| Agent | Kind | IEC balance | Test ETH (gas) | Allowance to TaskEscrow |
+| Agent | Kind | IEC balance | Test ETH (gas) | Allowance to TaskManager |
 | --- | --- | --- | --- | --- |
 | `human_1_0` | human | 2000 IEC | ~10 ETH | unlimited |
 | `human_2_0` | human | 2000 IEC | ~10 ETH | unlimited |
 | `robot_1_0` | robot | 2000 IEC | ~10 ETH | unlimited |
 | `robot_2_0` | robot | 2000 IEC | ~10 ETH | unlimited |
-| TaskEscrow | contract | 0 IEC | — | — |
+| TaskManager | contract | 0 IEC | — | — |
+| Organization | contract | 0 IEC (holds no money) | — | — |
 | **Total supply** | | **8000 IEC (fixed)** | | |
 
 (ETH is "~10" because the agent has already spent a little on gas for its own setup
 transactions.)
 
-**ServiceRegistry — who offers what**
+**ServiceRegistry — who offers what** (each offer also has a price, from `config.yaml`)
 
 | Service | Providers |
 | --- | --- |
@@ -362,18 +373,19 @@ transactions.)
 | SurveillancePatrol | robot_1_0, robot_2_0 |
 | ComponentRestock | robot_1_0, robot_2_0 |
 
-**Setup transactions (all at step 0) — 41 transactions, one block each**
+**Setup transactions (all at step 0) — 46 transactions, one block each**
 
 | Transaction | Count |
 | --- | --- |
-| deploy contracts | 4 |
+| deploy contracts | 5 |
+| wire the Organization | 4 |
 | send test ETH | 4 |
 | registerAgent | 4 |
 | mint | 4 |
 | approve | 4 |
 | registerService | 20 (2 × 6 + 2 × 4) |
 | renounce mint | 1 |
-| **total** | **41** |
+| **total** | **46** |
 
 ---
 
@@ -382,10 +394,10 @@ transactions.)
 | Phase | Today | With blockchain |
 | --- | --- | --- |
 | 1 | `RobopreneurModel.__init__` lines 11–69 | + read `blockchain:` section |
-| 2 | — | new `self._init_chain()` called right after phase 1: start Ganache, connect, deploy |
+| 2 | — | new `self._init_chain()` called right after phase 1: start Ganache, connect, deploy, wire the Organization |
 | 3 | `self.initialize_agents()` (line 71) | unchanged |
 | 4 | — | new `self._init_wallets()` after `initialize_agents()` |
 | 5 | services only built as Python objects in agent `__init__` | new `self._register_services()` |
 | 6 | `self.datacollector.collect(self)` (line 73) | + renounce mint before collecting |
-| 7 | `model.step()` (line 108) | + set chain clock at the start, `createTask` / `assignTask` / `completeTask` / `failTask` / `requeueTask` calls in the existing functions |
+| 7 | `model.step()` (line 108) | + set chain clock at the start, `createTask` / `completeTask` / `failTask` / `unassignTask` / `setAvailable` calls in the existing functions; `assign_tasks()` only applies the assignments the Organization made |
 | end | — | stop the Ganache process when the run finishes |

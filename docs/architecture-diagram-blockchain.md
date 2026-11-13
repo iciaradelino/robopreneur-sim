@@ -64,15 +64,15 @@ flowchart TD
   subgraph BEHAVIOUR["🤖  agents & behaviour"]
     direction TB
     AGENTS["✏️ behaviour/agents.py\nHumanAgent · RobotAgent\nmove · execute task phases · finish task\n+ wallet per agent · wealth = balance"]:::agent
-    BATT["✏️ behaviour/battery.py\ndrain / recharge\ncreates BatteryCharging tasks\n+ pays via escrow · retry if broke"]:::agent
-    SCHED["behaviour/schedule.py\nactive hours · day / minute clock"]:::agent
+    BATT["✏️ behaviour/battery.py\ndrain / recharge\ncreates BatteryCharging tasks\n+ pays via escrow · retry if broke\n+ setAvailable on recharge"]:::agent
+    SCHED["✏️ behaviour/schedule.py\nactive hours · day / minute clock\n+ setAvailable on shift change"]:::agent
   end
 
   subgraph TASKS["📋  tasks"]
     direction TB
-    TA["✏️ tasks/task_assignation.py\ngenerate_tasks · assign_tasks\n+ reward sampled at creation"]:::task
+    TA["✏️ tasks/task_assignation.py\ngenerate_tasks · assign_tasks\n+ reward sampled at creation\n+ assignment decided on-chain:\nonly applies TaskAssigned events"]:::task
     TASKPY["✏️ tasks/tasks.py\nTask class · requeue_task\n+ chain_task_id"]:::task
-    SERV["tasks/services.py\nService class\n(name · category · skill)"]:::task
+    SERV["✏️ tasks/services.py\nService class\n(name · category · skill · + price)"]:::task
   end
 
   subgraph ECON["💰  economy"]
@@ -87,7 +87,7 @@ flowchart TD
     FP["world/floor_plan.py\npolygon world · path routing"]:::util
     MOV["world/movement.py\ncheck_if_at_location"]:::util
     UTIL["world/utils.py\nsample reward / duration\nresolve waypoints"]:::util
-    MET["✏️ world/metrics.py\ngini · throughput · wealth\nqueue size · critical battery\n+ escrow locked · rejected tasks\n+ stranded robots · tx count · gas"]:::util
+    MET["✏️ world/metrics.py\ngini · throughput · wealth\nqueue size · critical battery\n+ escrow locked · rejected tasks\n+ waiting tasks · stranded robots · tx count · gas"]:::util
   end
 
   %% ═══════════════════════════════════════════════════════════════
@@ -104,8 +104,9 @@ flowchart TD
         direction LR
         TOKEN["IECToken\nERC-20 (OpenZeppelin)\nmint · transfer · balanceOf"]:::contract
         AREG["AgentRegistry\nregisterAgent · isRegistered"]:::contract
-        SREG["ServiceRegistry\nregisterService · getProviders"]:::contract
-        ESCROW["TaskEscrow\ncreateTask · assignTask · requeueTask\ncompleteTask · failTask · cancelTask"]:::contract
+        SREG["ServiceRegistry\nregisterService (+ price) · getProviders\nsetAvailable · setBusy"]:::contract
+        TMGR["TaskManager — task registry + escrow\ncreateTask · assignTask · requeueTask\ncompleteTask · failTask · cancelTask"]:::contract
+        ORG["Organization — on-chain assignment\nonTaskRegistered · onTaskEnded\nunassignTask · waiting list"]:::contract
       end
     end
   end
@@ -174,10 +175,11 @@ flowchart TD
   MODEL ==>|init: start Ganache| GANPY
   MODEL ==>|init: deploy contracts · mint\nevery step: set clock = step × 60 s| CHAIN
   AGENTS ==>|owns one| WALLET
-  AGENTS ==>|init: registerAgent · registerService\ninterruption: requeueTask| CHAIN
+  AGENTS ==>|init: registerAgent · registerService\ninterruption: unassignTask| CHAIN
   ECO ==>|completeTask / failTask| CHAIN
-  TA ==>|createTask · assignTask\ngetProviders| CHAIN
-  BATT ==>|createTask BatteryCharging\nrequeueTask| CHAIN
+  TA ==>|createTask\n(assigned on-chain in the same tx)| CHAIN
+  BATT ==>|createTask BatteryCharging\nsetAvailable · unassignTask| CHAIN
+  SCHED ==>|setAvailable| CHAIN
   WALLET ==>|signs every tx| CHAIN
   MET ==>|balances · escrow · tx log| CHAIN
   RUN ==>|tx log · event log| CHAIN
@@ -185,9 +187,12 @@ flowchart TD
 
   GANPY ==>|launches| GANACHE
   CHAIN ==>|JSON-RPC · calls deployed contracts| CONTRACTS
-  ESCROW -->|locks / releases IEC| TOKEN
-  ESCROW -->|checks member| AREG
-  ESCROW -->|checks service offer| SREG
+  TMGR -->|locks / releases IEC| TOKEN
+  TMGR -->|checks member| AREG
+  TMGR -->|checks service offer| SREG
+  TMGR -->|task registered / ended| ORG
+  ORG -->|assignTask · requeueTask| TMGR
+  ORG -->|reads offers · setBusy| SREG
   SREG -->|checks member| AREG
 
   CHAIN -.-> WEB3
@@ -196,7 +201,7 @@ flowchart TD
   GANPY -.-> NODE
 
   %% ── mark changed modules ────────────────────────────────────────
-  class APP,RUN,VAL,YAML,MODEL,AGENTS,BATT,TA,TASKPY,ECO,MET changed
+  class APP,RUN,VAL,YAML,MODEL,AGENTS,BATT,SCHED,TA,TASKPY,SERV,ECO,MET changed
 ```
 
 ### What the new arrows mean
@@ -204,15 +209,16 @@ flowchart TD
 | Arrow | Meaning |
 | --- | --- |
 | `core/model.py` ⇒ `ganache.py` | At init the model starts a fresh Ganache process for this run (seeded with the simulation seed, fixed start time) and stops it when the run ends. |
-| `core/model.py` ⇒ `chain.py` | At init the model connects to Ganache, takes Ganache's first pre-funded account as its **operator wallet**, compiles and deploys the 4 contracts, sends each agent test ETH for gas and **mints** `initial_wealth` IEC into each agent's wallet. At the start of every `model.step()` it sets Ganache's clock to `start + step × 60 s`. |
+| `core/model.py` ⇒ `chain.py` | At init the model connects to Ganache, takes Ganache's first pre-funded account as its **operator wallet**, compiles and deploys the 5 contracts (and wires the Organization to TaskManager and ServiceRegistry), sends each agent test ETH for gas and **mints** `initial_wealth` IEC into each agent's wallet. At the start of every `model.step()` it sets Ganache's clock to `start + step × 60 s`. |
 | `agents.py` ⇒ `wallet.py` | Each agent owns exactly one wallet. `agent.wealth` is no longer a stored number — it reads `IECToken.balanceOf(wallet.address)`. |
-| `agents.py` ⇒ `chain.py` | At init each agent registers itself and its services. If a task is interrupted (schedule or low battery) it sends `requeueTask`. |
+| `agents.py` ⇒ `chain.py` | At init each agent registers itself and its services, with prices. If a task is interrupted (schedule or low battery) the operator sends `unassignTask`, and the Organization reassigns the task. |
 | `agents.py` → `economy.py` ⇒ `chain.py` | When a task ends, `_finish_task` calls `economy.settle_task()` (replaces `transfer_reward`), which sends `completeTask` (money → worker) or `failTask` (money → back to assigner). `economy.py` stays the one place that deals with payments. |
-| `task_assignation.py` ⇒ `chain.py` | Task generation sends `createTask` (reward locked in escrow; if it reverts the task is dropped and counted as rejected). Assignment sends `assignTask`. |
-| `battery.py` ⇒ `chain.py` | The robot pays for its own recharge through `createTask`. If it can't afford it, it retries later (D7). |
+| `task_assignation.py` ⇒ `chain.py` | Task generation sends `createTask` (reward locked in escrow; if it reverts the task is dropped and counted as rejected). **The Organization contract assigns the task in that same transaction** (D4); `assign_tasks()` only reads the `TaskAssigned` events and starts the chosen agents. |
+| `battery.py`, `schedule.py` ⇒ `chain.py` | The robot pays for its own recharge through `createTask`. If it can't afford it, it retries later (D7). Whenever an agent goes off / on shift or needs / finishes a recharge, the operator sends `setAvailable`, so the Organization only assigns to agents that can work. |
 | `wallet.py` ⇒ `chain.py` | Every transaction is signed by the sender's wallet — this is how the contract knows *who* is asking. |
 | `chain.py` ⇒ Ganache contracts | Every call goes over JSON-RPC (Ethereum's standard request format) to the contracts deployed on Ganache. Ganache mines each transaction instantly, so the result (or the revert reason) comes back right away. |
-| `TaskEscrow` → `IECToken` / registries | The escrow is the only contract that moves money between agents, and it checks membership and service offers before accepting an assignment. |
+| `TaskManager` → `IECToken` / registries | The task registry; it holds rewards in escrow and is the only contract that moves money between agents. It checks membership and service offers before accepting an assignment. |
+| `TaskManager` ⇄ `Organization` ⇄ `ServiceRegistry` | Adapted from RODEO's `Organization.sol`: TaskManager calls the Organization when a task is registered or ends; the Organization picks the cheapest available provider (or the best waiting task for a freed provider), marks it busy in the ServiceRegistry and calls `assignTask`. |
 | `metrics.py`, `run_experiment.py`, `app.py` ⇒ `chain.py` | Read-only: balances, escrow totals, transaction and event logs for metrics, CSVs and the dashboard. |
 
 > **Why one chain client in the middle?** It's like a power socket: the simulator plugs
@@ -305,7 +311,7 @@ classDiagram
   class Chain {
     <<new · chain client>>
     web3 : Web3  (connected to Ganache)
-    contracts : Token · registries · escrow
+    contracts : Token · registries · TaskManager · Organization
     start_time : int
     send_tx(wallet, contract, function, args) Receipt
     balance_of(address) int
@@ -339,13 +345,15 @@ classDiagram
     fields : dict
   }
 
-  class EscrowTask {
+  class TaskRecord {
     <<new · on-chain record>>
     chain_task_id : int
     assigner : address
-    assignee : address
+    assignee : address  (picked by the Organization)
     service : str
+    category : str
     reward_locked : int
+    price : int  (paid to the assignee)
     status : Open | Assigned | Completed | Failed | Cancelled
     created_at / assigned_at / closed_at  (block timestamps)
   }
@@ -356,7 +364,10 @@ classDiagram
     service : str
     category : str
     skill : 0..1000
+    price : int
     active : bool
+    available : bool  (set by the simulator)
+    busy : bool  (set by the Organization)
   }
 
   class AgentRecord {
@@ -385,10 +396,10 @@ classDiagram
   Chain "1" *-- "many" Transaction : log
   Chain "1" *-- "many" Event : log
   Transaction "1" --> "many" Event : emits
-  Chain "1" *-- "many" EscrowTask : TaskEscrow
+  Chain "1" *-- "many" TaskRecord : TaskManager
   Chain "1" *-- "many" ServiceOffer : ServiceRegistry
   Chain "1" *-- "many" AgentRecord : AgentRegistry
-  Task "1" .. "1" EscrowTask : twin via chain_task_id
+  Task "1" .. "1" TaskRecord : twin via chain_task_id
   Service "1" .. "1" ServiceOffer : registered as
   Wallet "1" .. "1" AgentRecord : identified by address
 ```
@@ -401,5 +412,5 @@ details; the twin keeps the economic agreement.
 | Python (off-chain) | On-chain twin | Linked by | Twin holds |
 | --- | --- | --- | --- |
 | `HumanAgent` / `RobotAgent` | `AgentRecord` (AgentRegistry) | wallet address | identity, kind, active |
-| `Service` | `ServiceOffer` (ServiceRegistry) | provider address + service name | who offers what, skill |
-| `Task` | `EscrowTask` (TaskEscrow) | `chain_task_id` | assigner, assignee, locked reward, status |
+| `Service` | `ServiceOffer` (ServiceRegistry) | provider address + service name | who offers what, skill, price, available / busy |
+| `Task` | `TaskRecord` (TaskManager) | `chain_task_id` | assigner, assignee, locked reward, price, status |

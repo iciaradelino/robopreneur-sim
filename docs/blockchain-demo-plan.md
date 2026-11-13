@@ -6,20 +6,29 @@ A small, standalone demo of the blockchain layer described in
 Each agent and the master node runs as its **own Python process in its own terminal**. They
 coordinate only through **transactions** and **events** on a local Ganache chain.
 
-> **Update (implemented):** the demo is **fully manual**. Nothing happens automatically:
-> the master `deploy`s, `fund`s and `assign`s, and agents `register`, `create`, `complete`
-> or `fail`, each by typing a command in its own terminal. The automatic posting,
-> assignment, timeouts and timed execution described in §5 below were dropped.
-> Commands and demo script: [demo/README.md](../demo/README.md).
+> **Update (implemented):** this doc was the original plan; the demo has since changed:
+> - **Assignment is on-chain**, following RODEO's
+>   [`Organization.sol`](https://github.com/IERoboticsAILab/RODEO/blob/main/blockchain-network/smart-contracts/contracts/Organization.sol).
+>   Tasks are registered in **`TaskManager`** (formerly `TaskEscrow`, renamed after RODEO's
+>   TaskManager), and registering a task makes the **`Organization`** contract assign it
+>   in the same transaction. The master no longer assigns (decision Q1 below was reversed).
+> - Providers list each service **with a price**. A task goes to the cheapest idle provider
+>   with `price <= reward`; the worker is paid its price and the poster gets the rest back.
+> - The demo runs **step by step** (each action typed in its terminal) or **automatically**
+>   (`start`: tasks arrive on their own and agents complete and confirm them). Completion is
+>   two steps: the assignee `complete`s, the poster `confirm`s. Timeouts and `fail` were dropped.
+>
+> Commands, the assignment rules and the demo script: [demo/README.md](../demo/README.md).
 
 ---
 
 ## 1 · What the demo shows
 
 > Several terminals on one laptop. Each one is an independent robot or human agent with
-> its own wallet. Agents post tasks (with the reward locked in escrow), a master node
-> assigns each task to an agent that offers that service, the assigned agent executes it
-> and marks it completed, and the escrow pays the worker. Every step is a real
+> its own wallet. Agents register tasks in an on-chain task registry (with the reward
+> locked in escrow), the Organization contract assigns each one on the spot to the
+> cheapest idle agent offering that service, the assigned agent executes it and marks it
+> completed, and the poster's confirmation releases the payment. Every step is a real
 > transaction on a local Ethereum chain, and every terminal reacts to the chain's events
 > and logs them.
 
@@ -30,7 +39,7 @@ What the audience sees:
 │ eth_sendRawTx ...  │ │ [deploy] IECToken 0x5b…         │ │ [init] registered as robot   │
 │ Block #12 mined    │ │ [fund]   robot_1 ← 2000 IEC     │ │ [task] created #3 LabCleaning│
 │ ...                │ │ [event]  TaskCreated #3 by r1   │ │        reward 140 locked     │
-│                    │ │ [assign] #3 → human_1           │ │ [event] #3 completed by h1 ✓ │
+│                    │ │ [event]  #3 → human_1 (on-chain)│ │ [event] #3 completed by h1 ✓ │
 └────────────────────┘ └─────────────────────────────────┘ └──────────────────────────────┘
 ┌ human_1 ─────────────────────┐ ┌ robot_2 ──────┐ ┌ human_2 ──────┐
 │ [event] assigned #3 to me    │ │ ...           │ │ ...           │
@@ -44,13 +53,13 @@ What the audience sees:
 
 | Requirement | Covered by |
 | --- | --- |
-| Create the smart contracts (4 + assignment) | `IECToken`, `AgentRegistry`, `ServiceRegistry`, `TaskEscrow`. Assignment is `TaskEscrow.assignTask`, called by the master (see §3, decision Q1) |
-| Run Ganache and deploy the contracts | Terminal 1 runs Ganache. The master deploys the 4 contracts at startup and writes their addresses + ABIs to `deployments.json` |
+| Create the smart contracts (4 + assignment) | `IECToken`, `AgentRegistry`, `ServiceRegistry`, `TaskManager` + **`Organization`**, the assignment contract (see §3, decision Q1) |
+| Run Ganache and deploy the contracts | Terminal 1 runs Ganache. The master deploys the 5 contracts, wires the Organization to TaskManager and ServiceRegistry, and writes their addresses + ABIs to `deployments.json` |
 | Python scripts as agents and master | `master.py` (one process) and `agent.py --name robot_1` (one process per agent) |
-| Initialize everything and log it all in the terminals | Master: deploy → create wallets → fund. Agent: register → approve escrow → register services. Each action and event gets a coloured, prefixed log line |
+| Initialize everything and log it all in the terminals | Master: deploy → create wallets → fund. Agent: register → approve TaskManager → register services with prices. Each action and event gets a coloured, prefixed log line |
 | Agents listen to events | Each process polls event filters (`TaskCreated`, `TaskAssigned`, `TaskCompleted`, …) and reacts |
 | Agents talk to the contracts through transactions | agent logic → `ChainClient.send_tx()` → signed with the agent's own key → contract function. No shared memory, files or sockets between agents |
-| Agents create, execute and complete tasks | `createTask` (locks reward) → master `assignTask` → assignee "executes" (timed sleep) → assignee `completeTask` (reward paid) |
+| Agents create, execute and complete tasks | `createTask` (locks reward, Organization assigns in the same transaction) → assignee "executes" (timed sleep) → assignee `completeTask` → poster `confirmTask` (price paid, rest refunded) |
 | Master wallet holds all the money | `IECToken` mints the whole supply to the master at deploy time. The master sends each agent its starting IEC and some test ETH for gas |
 
 ---
@@ -64,7 +73,7 @@ flowchart LR
   classDef contract fill:#4a3500,stroke:#f59e0b,color:#fde68a,stroke-width:2px
 
   subgraph T2["Terminal 2 · master.py"]
-    M["Master node\noperator wallet = all IEC\ndeploy · fund · assign"]:::proc
+    M["Master node\nowner wallet = all IEC\ndeploy · fund · requeue"]:::proc
   end
   subgraph TA["Terminals 3..N · agent.py"]
     A1["robot_1\nwallet"]:::proc
@@ -75,17 +84,21 @@ flowchart LR
     TOK["IECToken"]:::contract
     AR["AgentRegistry"]:::contract
     SR["ServiceRegistry"]:::contract
-    ESC["TaskEscrow\n(+ assignment)"]:::contract
+    TM["TaskManager\ntask registry + escrow"]:::contract
+    ORG["Organization\non-chain assignment"]:::contract
   end
 
-  M  ==>|deploy · transfer · assignTask| ESC
-  A1 ==>|register · createTask · completeTask| ESC
-  A2 ==>|register · createTask · completeTask| ESC
-  ESC -. events .-> M
-  ESC -. events .-> A1
-  ESC -. events .-> A2
-  ESC --> TOK
-  ESC --> SR
+  M  ==>|deploy · transfer · unassignTask| ORG
+  A1 ==>|register · createTask · completeTask · confirmTask| TM
+  A2 ==>|register · createTask · completeTask · confirmTask| TM
+  TM -->|onTaskRegistered · onTaskDelivered| ORG
+  ORG -->|assignTask| TM
+  ORG -->|reads offers · setBusy| SR
+  TM -. events .-> M
+  TM -. events .-> A1
+  TM -. events .-> A2
+  TM --> TOK
+  TM --> SR
   SR --> AR
 ```
 
@@ -98,19 +111,24 @@ transaction is how an agent *acts*, and an event is how the others *find out*.
 sequenceDiagram
   autonumber
   participant R as robot_1 (agent.py)
-  participant E as TaskEscrow
+  participant E as TaskManager
+  participant O as Organization
   participant M as master.py
   participant H as human_1 (agent.py)
 
-  R->>E: createTask("LabCleaning", 140)  [signed by robot_1]
-  E-->>M: event TaskCreated(#3, robot_1, LabCleaning, 140)
-  M->>M: pick a provider: offers service · not busy · ≠ assigner
-  M->>E: assignTask(#3, human_1)  [signed by master]
-  E-->>H: event TaskAssigned(#3, human_1)
-  H->>H: execute (sleep 3 s, log progress)
+  R->>E: createTask("LabCleaning", "cleaning", 140)  [signed by robot_1]
+  Note over E,O: same transaction
+  E->>O: onTaskRegistered(#3)
+  O->>O: cheapest idle provider · offers service · price ≤ 140 · ≠ assigner
+  O->>E: assignTask(#3, human_1, 125)
+  E-->>M: events TaskCreated, TaskAssigned
+  E-->>H: event TaskAssigned(#3, human_1, 125)
+  H->>H: execute (sleep, log progress)
   H->>E: completeTask(#3)  [signed by human_1]
-  E-->>R: event TaskCompleted(#3, human_1, 140)
-  E-->>M: event TaskCompleted → human_1 free again
+  E->>O: onTaskDelivered(#3) → human_1 free, gets the best waiting task
+  E-->>R: event TaskDelivered(#3)
+  R->>E: confirmTask(#3)  [signed by robot_1]
+  E-->>H: event TaskCompleted(#3, paid 125, refunded 15 to robot_1)
 ```
 
 ---
@@ -119,7 +137,7 @@ sequenceDiagram
 
 | # | Question | Recommendation | Alternative |
 | --- | --- | --- | --- |
-| Q1 | "4 + assignation": is assignment its own contract? | Keep the 4 contracts. **Assignment = `TaskEscrow.assignTask`**, and the master decides who gets the task off-chain. This matches D4 in the functionalities doc, and the same contracts carry straight over to the simulator | A 5th `TaskAssignment` contract that picks the provider on-chain (for example, first registered free provider). More on-chain logic, but the chain can't know who is "busy" or "idle" without extra transactions |
+| Q1 | "4 + assignation": is assignment its own contract? | ✅ *Revised:* **a 5th contract, `Organization`, assigns on-chain**, adapted from RODEO's `Organization.sol`: as soon as a task is registered it goes to the cheapest idle provider with `price <= reward`, and a provider that frees up takes the best-paid waiting task. The contract tracks "busy" itself (it sets it on assignment and clears it on delivery), so no extra transactions are needed | *Original choice:* keep 4 contracts, the master picks the assignee off-chain and calls `assignTask`. Dropped: the assignment wasn't traceable on-chain, only its result |
 | Q2 | Who marks a task completed? | **The assignee** calls `completeTask` / `failTask` (you said "agents… mark it as completed"). The master can also do it, which covers timeouts | Master-only completion as in D3 (the simulator is the oracle). Simpler trust model, but agents don't really "complete" anything themselves |
 | Q3 | Where does the money start? | `IECToken` constructor mints the **total supply to the master**. The master `transfer`s `initial_wealth` to each agent. Supply is fixed from the start, so no `finishMinting` is needed | Mint per agent, then `finishMinting` (as in the functionalities doc) |
 | Q4 | Agent wallets | Deterministic keys from `seed + agent name`, starting with 0 ETH / 0 IEC, so it's visible that the master funds them | Use Ganache's pre-funded accounts 1..N. Fewer steps, but every agent already starts "rich" in ETH |
@@ -138,12 +156,16 @@ demo/
 ├── contracts/
 │   ├── IECToken.sol
 │   ├── AgentRegistry.sol
-│   ├── ServiceRegistry.sol
-│   └── TaskEscrow.sol
+│   ├── ServiceRegistry.sol offers + prices, busy flag
+│   ├── TaskManager.sol     task registry + escrow
+│   └── Organization.sol    on-chain assignment
 ├── chain/
 │   ├── client.py           ChainClient: connect, load deployments, send_tx, call, event polling
 │   ├── compile.py          py-solc-x compile (evm_version pinned, see §7)
 │   ├── wallets.py          deterministic key derivation
+│   ├── node.py             shared prompt + read-only commands
+│   ├── auto.py             automatic mode: arrivals, reward and duration sampling
+│   ├── config.py           paths, config loading
 │   └── log.py              coloured, prefixed per-node logger
 ├── master.py
 ├── agent.py
@@ -151,7 +173,7 @@ demo/
 └── out/                    (gitignored) deployments.json, logs/*.log
 ```
 
-### `demo_config.yaml` (sketch)
+### `demo_config.yaml` (original sketch; see the real file for the current format, where each agent's services map to a price)
 
 ```yaml
 chain:
@@ -186,19 +208,21 @@ behaviour:
   and prints account 0.
 
 ### Phase 1 · Smart contracts (1–1½ days)
-Same functions as in [blockchain-briefing.md](blockchain-briefing.md#smart-contract-functions), with the Q2/Q3 changes:
+As implemented (the plan had `TaskEscrow` with operator-only `assignTask`, skills instead of
+prices and a `failTask`; Q1 moved assignment into the `Organization` contract):
 
 | Contract | Functions | Events |
 | --- | --- | --- |
 | `IECToken` (OZ ERC-20, 2 decimals) | constructor mints `total_supply` → master. Standard `transfer`, `approve`, `transferFrom`, `balanceOf` | `Transfer`, `Approval` |
 | `AgentRegistry` | `registerAgent(agentId, kind)`, `isRegistered`, `getAgent` | `AgentRegistered` |
-| `ServiceRegistry(agentRegistry)` | `registerService(name, category, skill)`, `offers(provider, name)`, `getProviders(name)` | `ServiceRegistered` |
-| `TaskEscrow(token, agentReg, serviceReg, operator)` | `createTask(service, reward)`, `assignTask(id, assignee)` *onlyOperator*, `completeTask(id)` / `failTask(id)` *assignee or operator*, `requeueTask(id)` *operator*, `cancelTask(id)` *assigner*, `getTask`, `totalLocked` | `TaskCreated`, `TaskAssigned`, `TaskCompleted`, `TaskFailed`, `TaskRequeued`, `TaskCancelled` |
+| `ServiceRegistry(agentRegistry)` | `registerService(service, category, price)` (calls `Organization.onServiceRegistered`), `setBusy(provider, busy)` *onlyOrganization*, `getServiceMeta(id)`, `offers`, `priceOf`, `getProviders` | `ServiceRegistered`, `ProviderBusy` |
+| `TaskManager(token, agentReg, serviceReg)` — task registry + escrow | `createTask(service, category, reward)` (calls `Organization.onTaskRegistered`), `assignTask(id, assignee, price)` / `requeueTask(id)` *onlyOrganization*, `completeTask(id)` *assignee* (calls `onTaskDelivered`), `confirmTask(id)` *assigner* (price → worker, rest → assigner), `cancelTask(id)` *assigner*, `getTask`, `getTaskMeta`, `totalLocked` | `TaskCreated`, `TaskAssigned`, `TaskRequeued`, `TaskDelivered`, `TaskCompleted`, `TaskCancelled` |
+| `Organization` (owner = master) | hooks `onTaskRegistered`, `onTaskDelivered`, `onTaskCancelled`, `onServiceRegistered`; `unassignTask(id)` *onlyOwner*; `getWaitingTasks` | `TaskQueued`, `TaskMatched` |
 
 - Reverts with clear messages (`"not registered"`, `"insufficient balance"`,
   `"assignee does not offer service"`, `"wrong status"`, `"not assignee"`) so the logs read
   well.
-- **Done when:** `chain/compile.py` compiles all 4, and a throwaway script deploys them and
+- **Done when:** `chain/compile.py` compiles all of them, and a throwaway script deploys them and
   runs one task through the happy path plus one revert.
 
 ### Phase 2 · Chain client (1 day)
@@ -215,11 +239,13 @@ Same functions as in [blockchain-briefing.md](blockchain-briefing.md#smart-contr
 ### Phase 3 · Master node (1 day)
 `master.py`:
 1. **Init:** connect → use Ganache account 0 as master/operator → compile and deploy
-   Token → AgentRegistry → ServiceRegistry → TaskEscrow → write `out/deployments.json`
+   Token → AgentRegistry → ServiceRegistry → TaskManager → Organization, wire the
+   Organization to the other two → write `out/deployments.json`
    (addresses + ABIs).
 2. **Fund:** for each agent in the config, derive its address, send `gas_eth_per_agent`
    ETH, then `transfer(initial_wealth)` IEC. Log the master's balance going down.
-3. **Listen and assign:**
+3. **Listen and assign** *(as implemented: replaced by the Organization contract, Q1. The
+   master only logs `TaskCreated` / `TaskAssigned` / `TaskQueued` / … and can `requeue`)*:
    - `TaskCreated` → add to the pending queue
    - for each pending task: `getProviders(service)` → filter out the assigner and busy
      agents → pick one at random → `assignTask`. If nobody is free, retry later.
@@ -231,7 +257,7 @@ Same functions as in [blockchain-briefing.md](blockchain-briefing.md#smart-contr
 ### Phase 4 · Agent node (1 day)
 `agent.py --name robot_1`:
 1. **Init:** derive its wallet → wait for `deployments.json` and for the master's ETH/IEC
-   to arrive → `registerAgent` → `approve(TaskEscrow, max)` → `registerService` ×N.
+   to arrive → `registerAgent` → `approve(TaskManager, max)` → `registerService` ×N.
 2. **Listen:**
    - `TaskAssigned(assignee == me)` → log, "execute" (sleep `duration_s` with a progress
      line), roll success with `skill` → `completeTask` or `failTask`.
@@ -250,13 +276,13 @@ Same functions as in [blockchain-briefing.md](blockchain-briefing.md#smart-contr
 ### Phase 6 · Demo script and rehearsal (½ day)
 A ~5-minute script in `demo/README.md`:
 1. Start Ganache: empty chain.
-2. Start the master: 4 deploys, then funding. The master's balance drops from 100 000.
+2. Start the master: 5 deploys and the wiring, then funding. The master's balance drops from 100 000.
 3. Start the agents one by one: registrations show up in the master's log.
 4. Let it run: tasks created → assigned → executed → paid, across terminals.
 5. Show a **revert**: an agent with low funds tries to post an expensive task (a
    `--broke` flag or a low `initial_wealth`).
 6. Show **conservation**: master status line, Σ balances + escrow = total supply.
-7. Optional: kill one agent mid-task → master timeout → `requeueTask` → reassigned.
+7. Optional: kill one agent mid-task → master `requeue` → the Organization reassigns it.
 
 **Total: about 5–6 working days.**
 

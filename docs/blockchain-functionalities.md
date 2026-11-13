@@ -16,7 +16,7 @@ decision was made. Written for someone new to blockchain.
 | **Wallet** | An account: an *address* (like an IBAN, public) + a *private key* (like a PIN, secret, used to sign). | Every human and robot gets one. |
 | **Token** | The money that lives on the chain. | `IEC` — the currency already used in `config.yaml` (`initial_wealth: 2000 # IEC`). |
 | **Transaction** | A signed request to change something on the chain ("send 120 IEC to X", "create task"). | Every money move or task state change. |
-| **Smart contract** | A small program stored on the chain. Nobody can change its rules once deployed, and it can hold money itself. | The rules of our marketplace: registries + task escrow. |
+| **Smart contract** | A small program stored on the chain. Nobody can change its rules once deployed, and it can hold money itself. | The rules of our marketplace: registries, the task registry (with its escrow) and the assignment logic. |
 | **Escrow** | Money parked with a neutral third party until a job is done. | The contract holds the reward while a task is in progress. |
 | **Event** | A public announcement a contract makes ("task 42 completed"). Cheap to emit, easy to listen to. | Feeds metrics, dashboard and CSV logs. |
 | **Gas** | The fee paid to the network for running a transaction, paid in ETH. | Paid with Ganache test ETH, recorded per transaction; never touches IEC (D6). |
@@ -42,14 +42,19 @@ With the blockchain layer, the economy becomes a **small, rule-bound marketplace
 
 1. Every agent has a **wallet** holding **IEC tokens**.
 2. Agents **register** on-chain, and so do the **services** they offer.
-3. When someone needs a task done, they **lock the reward in escrow** at creation.
-4. When the task finishes, the contract **pays the worker** (success) or **refunds the
+3. When someone needs a task done, they **register it on-chain and lock the reward in
+   escrow**. The task registry makes every task immutable and traceable.
+4. **The moment a task is registered, a contract assigns it** to the cheapest available
+   provider, following RODEO's
+   [`Organization.sol`](https://github.com/IERoboticsAILab/RODEO/blob/main/blockchain-network/smart-contracts/contracts/Organization.sol).
+5. When the task finishes, the contract **pays the worker** (success) or **refunds the
    requester** (failure).
-5. Every step of this is a **transaction**, and each produces **events** we can analyse.
+6. Every step of this is a **transaction**, and each produces **events** we can analyse.
 
 **What stays exactly as it is:** movement, floor plan, battery physics, schedules, phases
-and waypoints, failure probability, and the matching logic of *who* gets a task. The
-blockchain records and enforces the *economic agreements*; it does not run the robots.
+and waypoints, failure probability. The blockchain records and enforces the *economic
+agreements* and decides *who* gets each task; it does not run the robots. The simulator
+only tells it when an agent can or can't take work (D4).
 
 > **Why this split?** On a real blockchain, every computation costs gas and every byte stored
 > is expensive. Running path-finding or battery drain on-chain would be absurdly costly and
@@ -133,25 +138,29 @@ To find who can do a task, `_get_eligible_agents` loops over every agent.
 | service name | `LabCleaning` |
 | category | `cleaning` |
 | skill (0–1, stored as integer 0–1000) | `950` |
+| price (IEC the provider charges) | `110` |
 | active | `true` |
+| available (set by the simulator: schedule, battery) / busy (set by the Organization) | `true` / `false` |
 
 The service *definitions* (reward median, phases, waypoints, durations) stay in
 `config.yaml` — they describe the physical job, not the agreement.
 
 **Functionalities**
-- `registerService(name, category, skill)` — each agent registers each service it offers at
-  init.
-- `getProviders(name)` — list of addresses offering a service. The off-chain matcher reads
-  this, then filters by the off-chain conditions (idle, battery, schedule).
+- `registerService(name, category, skill, price)` — each agent registers each service it
+  offers at init.
+- `setAvailable(provider, available)` — the operator reports whether an agent can take work
+  now (off-chain conditions: schedule, battery, charging). Like RODEO's
+  `activateService` / `removeService`.
+- `getProviders(name)` — list of addresses offering a service.
 - `deactivateService(name)` — optional, for later (e.g. a robot stops offering a service).
 
 > **Why store skill as an integer?** Blockchains (Solidity) have no decimal numbers. The
 > standard trick is to scale: `0.95 → 950`.
 
 > **Why a registry instead of each agent's list?** It's the "yellow pages" of the
-> marketplace — anyone can check who offers what, and a task can only be assigned to an
-> address that actually registered that service. That check is enforced by the contract,
-> not just trusted from Python.
+> marketplace — anyone can check who offers what, and the Organization contract matches
+> tasks against it. A task can only be assigned to an address that actually registered
+> that service, at a price within the reward.
 
 ---
 
@@ -160,17 +169,18 @@ The service *definitions* (reward median, phases, waypoints, durations) stay in
 **What it is today:** a `Task` object with lifecycle `pending → in_progress →
 completed | failed`, and the reward is paid only at the end, without checking funds.
 
-**What it becomes:** a **job agreement** inside a **TaskEscrow** contract. The Python `Task`
-object still exists (it holds waypoints, phase timers etc.) and gets a `chain_task_id`
-linking it to its on-chain twin.
+**What it becomes:** a **job agreement** registered in the **TaskManager** contract, the
+on-chain task registry (the name comes from RODEO), which also holds its reward in escrow.
+The Python `Task` object still exists (it holds waypoints, phase timers etc.) and gets a
+`chain_task_id` linking it to its on-chain twin.
 
 ```mermaid
 stateDiagram-v2
   direction LR
   [*] --> Open : createTask\n(assigner locks reward)
-  Open --> Assigned : assignTask\n(assignee chosen)
+  Open --> Assigned : assignTask by the Organization\n(same transaction, or later\nwhen a provider frees up)
   Assigned --> Open : requeueTask\n(interrupted: schedule / low battery)
-  Assigned --> Completed : completeTask\n(reward → assignee)
+  Assigned --> Completed : completeTask\n(price → assignee, rest → assigner)
   Assigned --> Failed : failTask\n(reward → back to assigner)
   Open --> Cancelled : cancelTask\n(reward → back to assigner)
   Completed --> [*]
@@ -178,12 +188,12 @@ stateDiagram-v2
   Cancelled --> [*]
 ```
 
-| On-chain (TaskEscrow) | Off-chain (Python `Task`) |
+| On-chain (TaskManager) | Off-chain (Python `Task`) |
 | --- | --- |
 | chain task id | resolved waypoints, phase index, dwell timers |
 | assigner address, assignee address | location, durations |
-| service name | agent skill used for fail roll |
-| reward amount (locked) | |
+| service name, category | agent skill used for fail roll |
+| reward amount (locked), agreed price | |
 | status | |
 | created / assigned / closed time (→ simulation step) | |
 
@@ -196,9 +206,10 @@ You already know it from everyday life:
 - **Wallapop / Vinted protected payment:** the buyer pays, the platform holds the money,
   the seller gets it only when the buyer confirms the item arrived.
 
-In our simulator the middle-man is the **TaskEscrow smart contract**. Since it's code on a
+In our simulator the middle-man is the **TaskManager smart contract**: it registers the task
+and holds its reward. Since it's code on a
 blockchain, nobody — not the assigner, not the worker, not even us — can take the money
-out except by following its rules (complete → worker, fail/cancel → back to assigner).
+out except by following its rules (complete → worker's price to the worker and the rest back, fail/cancel → back to assigner).
 
 **Why does it need the amount when the task is created, not when it's assigned?**
 
@@ -219,23 +230,29 @@ out except by following its rules (complete → worker, fail/cancel → back to 
 
 In the current code the reward doesn't depend on *who* does the task (`sample_reward` only
 uses the service's config), so moving the draw from assignment to creation doesn't change
-its meaning — only *when* it is drawn.
+its meaning — only *when* it is drawn. With on-chain assignment the reward becomes the
+requester's **budget**: the Organization only considers providers whose price fits in it,
+and the worker is paid its price (as in RODEO).
 
 ```
 creation        assignment         execution              end
    │                │                  │                   │
-assigner ──140──▶ [ ESCROW holds 140 ] ─────────────────▶ success: 140 → worker
-                                                          failure: 140 → assigner
+assigner ──140──▶ [ TaskManager holds 140 ] ───────────▶ success: price 120 → worker,
+                  Organization picks the worker                     20 → assigner
+                  (cheapest, price ≤ 140)                 failure: 140 → assigner
 ```
 
 **Functionalities**
-- `createTask(service, reward)` — sent by the **assigner**. Moves `reward` IEC from the
-  assigner's wallet into the contract. **Fails if the assigner can't afford it.**
-- `assignTask(taskId, assignee)` — sent by the **operator** (see D3). Checks the assignee is
-  registered and offers that service.
-- `requeueTask(taskId)` — operator; back to `Open`, money stays locked.
-- `completeTask(taskId)` — operator (oracle); releases the reward to the assignee.
-- `failTask(taskId)` — operator (oracle); refunds the assigner.
+- `createTask(service, category, reward)` — sent by the **assigner**. Moves `reward` IEC from
+  the assigner's wallet into the contract. **Fails if the assigner can't afford it.** Then
+  calls the Organization, which assigns the task in the same transaction (D4).
+- `assignTask(taskId, assignee, price)` — only the **Organization** contract. Checks the
+  assignee is registered, offers that service and `price ≤ reward`.
+- `requeueTask(taskId)` — only the Organization (the operator asks it through
+  `unassignTask`); back to `Open`, money stays locked, reassigned at once if possible.
+- `completeTask(taskId)` — operator (oracle); pays the agreed price to the assignee and the
+  rest back to the assigner; frees the assignee.
+- `failTask(taskId)` — operator (oracle); refunds the assigner; frees the assignee.
 - `cancelTask(taskId)` — assigner; only while `Open`, full refund. (Not used by the sim at
   first, but a real marketplace needs it.)
 
@@ -258,7 +275,7 @@ Transaction
   block         – Ganache block it was mined in (one per transaction)
   step          – simulation step, from the block timestamp (D2)
   sender        – wallet address that signed it
-  contract      – Token / AgentRegistry / ServiceRegistry / TaskEscrow
+  contract      – Token / AgentRegistry / ServiceRegistry / TaskManager / Organization
   function      – e.g. createTask
   args          – e.g. {service: "LabCleaning", reward: 140}
   value_moved   – IEC moved (0 if none)
@@ -274,11 +291,11 @@ Transaction
 | `mint` (initial funding) | operator | yes → agent | init |
 | `registerAgent` | agent | no | init |
 | `registerService` | agent | no | init |
-| `createTask` | assigner | yes → escrow | task generated / robot needs recharge |
-| `assignTask` | operator | no | `assign_tasks()` |
-| `requeueTask` | operator | no | schedule or battery interruption |
-| `completeTask` | operator | yes escrow → assignee | `_finish_task(success=True)` |
-| `failTask` | operator | yes escrow → assigner | `_finish_task(success=False)` |
+| `createTask` (+ assignment inside it) | assigner | yes → escrow | task generated / robot needs recharge |
+| `setAvailable` | operator | no | agent's schedule starts or ends, robot needs / finishes a recharge |
+| `unassignTask` → `requeueTask` | operator | no | schedule or battery interruption |
+| `completeTask` (+ next assignment inside it) | operator | yes escrow → assignee (+ rest → assigner) | `_finish_task(success=True)` |
+| `failTask` (+ next assignment inside it) | operator | yes escrow → assigner | `_finish_task(success=False)` |
 
 **Functionalities**
 - Send, sign, mined instantly by Ganache; the simulator gets the receipt back right away.
@@ -303,12 +320,13 @@ Transaction
 | --- | --- | --- |
 | `Transfer` | Token | from, to, amount |
 | `AgentRegistered` | AgentRegistry | address, agent_id, kind |
-| `ServiceRegistered` | ServiceRegistry | provider, service, skill |
-| `TaskCreated` | TaskEscrow | taskId, assigner, service, reward |
-| `TaskAssigned` | TaskEscrow | taskId, assignee |
-| `TaskRequeued` | TaskEscrow | taskId, previous assignee |
-| `TaskCompleted` | TaskEscrow | taskId, assignee, reward |
-| `TaskFailed` | TaskEscrow | taskId, assignee, refunded amount |
+| `ServiceRegistered` | ServiceRegistry | provider, service, skill, price |
+| `TaskCreated` | TaskManager | taskId, assigner, service, category, reward |
+| `TaskAssigned` | TaskManager | taskId, assignee, price |
+| `TaskQueued` | Organization | taskId (nobody available at that price yet) |
+| `TaskRequeued` | TaskManager | taskId, previous assignee |
+| `TaskCompleted` | TaskManager | taskId, assignee, paid, refunded |
+| `TaskFailed` | TaskManager | taskId, assignee, refunded amount |
 
 **Functionalities**
 - **Logging** → `events.csv`: a full, ordered history of the market.
@@ -325,16 +343,19 @@ Transaction
 
 ## 3 · Smart contracts
 
-Four contracts, each with one job:
+Five contracts, each with one job. They follow RODEO's structure: TaskManager and
+ServiceRegistry play its TaskManager and ServiceManager, and Organization is its
+`Organization.sol`.
 
 | Contract | Job | Concepts it covers |
 | --- | --- | --- |
 | **IECToken** | The currency. Balances, transfers, minting at init. (Standard "ERC-20" token.) | Wallet, Transaction |
 | **AgentRegistry** | Who is a member of the marketplace. | Agent |
-| **ServiceRegistry** | Who offers which service, with what skill. | Servicio |
-| **TaskEscrow** | Task agreements + holds and releases the money. | Tarea, Transaction, Event |
+| **ServiceRegistry** | Who offers which service, with what skill and price; who is available. | Servicio |
+| **TaskManager** | The task registry: every task agreement, immutable and traceable. Holds and releases the money (escrow). | Tarea, Transaction, Event |
+| **Organization** | Assigns tasks: the moment one is registered, and whenever a provider frees up. | Tarea |
 
-> **Why split into four and not one big contract?** Each is small, easy to read, easy to
+> **Why split into five and not one big contract?** Each is small, easy to read, easy to
 > test. The token is a well-known standard (ERC-20), so we don't reinvent it.
 
 ---
@@ -347,7 +368,8 @@ blockchain. The simulator starts its own Ganache process at the beginning of eac
 stops it at the end:
 - `--wallet.seed <simulation seed>` → the same pre-funded accounts every run;
 - `--chain.time <fixed start date>` → the chain clock starts at the same moment every run;
-- the first Ganache account (pre-loaded with test ETH) becomes the **operator** (D3).
+- the first Ganache account (pre-loaded with test ETH) becomes the **operator** (D3) and the
+  owner of the Organization contract.
 
 All Python ↔ blockchain communication goes through one **chain client** module
 (`blockchain/chain.py`, built on `web3.py`). It sends and signs transactions, waits for
@@ -375,7 +397,7 @@ blockchain:
 **D1b · The blockchain is always on.** ✅ *decided*
 There is no `enabled` switch: every run uses wallets, registries and escrow. The old
 `wealth -= / wealth +=` path in `economy.py` is removed; `economy.py` becomes the thin
-"payments" module that talks to the TaskEscrow (`settle_task(task, success)` →
+"payments" module that talks to the TaskManager (`settle_task(task, success)` →
 `completeTask` / `failTask`), so `agents.py` keeps calling the economy module as today.
 *Why:* one code path is simpler to maintain and test than two, and the blockchain economy
 *is* the simulator's economy from now on.
@@ -394,15 +416,32 @@ IEC") must be known immediately so the task is not queued. The clock gives us th
 
 **D3 · The simulator is the operator and the oracle.**
 The model has its own wallet (the "operator"). It is the only address allowed to call
-`assignTask`, `completeTask`, `failTask`, `requeueTask`.
+`completeTask`, `failTask`, `unassignTask` (interruptions) and `setAvailable`. It does
+**not** assign tasks (D4).
 *Why:* the chain can't see the physical world, so someone trusted must report outcomes.
 In a real deployment this could be replaced by sensors, the assigner confirming, or a
 vote — but that's a later research question, not needed now.
 
-**D4 · Matching stays off-chain.**
-`assign_tasks()` still decides *who* gets the task (random among eligible). The contract
-only checks the choice is valid (registered, offers the service).
-*Why:* eligibility depends on battery, schedule and idle status, which live off-chain.
+**D4 · Matching is on-chain (Organization contract).** ✅ *decided*
+Following RODEO's `Organization.sol`, the task registry calls the Organization contract
+**as soon as a task is registered**, and it assigns the task in the same transaction:
+- to the **cheapest** provider that offers the service (same name and category), with
+  `price ≤ reward`, is available and not busy, and is not the requester;
+- if there is none, the task waits in an on-chain list. Whenever a provider frees up
+  (task completed or failed, interrupted, or available again), it gets the **waiting task
+  with the highest reward** it can do (oldest first on a tie).
+
+`assign_tasks()` no longer decides anything: the simulator reads `TaskAssigned` from the
+transaction's events and starts that agent on the task.
+*Why:* the task registry must be on-chain so it is immutable and traceable, and with the
+assignment there too, *who got the task and why* is part of that record.
+*How off-chain eligibility gets in:* battery, schedule and charging live off-chain, so the
+simulator reports them with `setAvailable(agent, true/false)` when they change (a few
+transactions per agent per day, not one per step). Busy/idle is tracked by the contract
+itself.
+*Consequence:* the assignment rule changes from "random among eligible" to "cheapest
+eligible", and agents need a price per service in `config.yaml`. Like D5, this means runs
+won't reproduce results from before the change.
 
 **D5 · Reward is sampled at task creation (not assignment).** ✅ *decided*
 Escrow needs the amount up front (see [§ 2.4.1](#241--what-is-escrow-and-why-does-it-need-the-amount-at-creation)).
@@ -448,11 +487,10 @@ Same behaviour as today (no one gets paid on failure), but now explicit and logg
 
 | Step | What happens in the sim | Transaction | Events | Balances (robot / escrow / human) |
 | --- | --- | --- | --- | --- |
-| 0 | init | `mint` ×2, `registerAgent` ×2, `registerService` ×… | `Transfer`, `AgentRegistered`, `ServiceRegistered` | 2000 / 0 / 2000 |
-| 350 | battery ≤ 30 → recharge task | `createTask(BatteryCharging, 120)` from robot | `TaskCreated`, `Transfer(robot→escrow)` | 1880 / 120 / 2000 |
-| 351 | `assign_tasks()` picks human_2_0 | `assignTask(7, human_2_0)` from operator | `TaskAssigned` | 1880 / 120 / 2000 |
-| 351–370 | human walks, plugs in, dwells | — (off-chain) | — | unchanged |
-| 371 | phase done, success | `completeTask(7)` from operator | `TaskCompleted`, `Transfer(escrow→human)` | 1880 / 0 / 2120 |
+| 0 | init | `mint` ×2, `registerAgent` ×2, `registerService` ×… (human_2_0 offers BatteryCharging at 110) | `Transfer`, `AgentRegistered`, `ServiceRegistered` | 2000 / 0 / 2000 |
+| 350 | battery ≤ 30 → recharge task | `createTask(BatteryCharging, maintenance, 120)` from robot; in the same transaction the Organization picks human_2_0, the cheapest available provider | `TaskCreated`, `Transfer(robot→TaskManager)`, `TaskAssigned(7, human_2_0, 110)` | 1880 / 120 / 2000 |
+| 350–370 | human walks, plugs in, dwells | — (off-chain) | — | unchanged |
+| 371 | phase done, success | `completeTask(7)` from operator | `TaskCompleted`, `Transfer(TaskManager→human, 110)`, `Transfer(TaskManager→robot, 10)` | 1890 / 0 / 2110 |
 
 ---
 
@@ -461,13 +499,13 @@ Same behaviour as today (no one gets paid on failure), but now explicit and logg
 | File | Change |
 | --- | --- |
 | new `robopreneur/blockchain/` package | `ganache.py` (start / stop Ganache), `chain.py` (chain client on `web3.py`), `wallet.py`, `contracts/*.sol` (Solidity), compiled with `py-solc-x` |
-| `core/model.py` | start Ganache, deploy contracts, operator wallet; set the chain clock every step |
+| `core/model.py` | start Ganache, deploy the 5 contracts and wire the Organization, operator wallet; set the chain clock every step |
 | `behaviour/agents.py` | each agent gets a `wallet`; `wealth` reads the balance; `_finish_task` calls complete/fail |
-| `tasks/services.py` | services registered in the registry at init |
-| `tasks/task_assignation.py` | `createTask` on generation (handle revert); `assignTask` on assignment |
-| `behaviour/battery.py` | recharge task goes through `createTask` (retry with cooldown if broke); `requeue` goes through `requeueTask` |
-| `economy/economy.py` | `transfer_reward` removed; becomes `settle_task()` → escrow `completeTask` / `failTask` |
-| `world/metrics.py` | new reporters: escrow locked, rejected tasks, stranded robots, tx count, gas |
+| `tasks/services.py` | services registered in the registry at init, with a price |
+| `tasks/task_assignation.py` | `createTask` on generation (handle revert); `assign_tasks()` replaced by reading `TaskAssigned` / `TaskQueued` from receipts and starting the chosen agent |
+| `behaviour/battery.py`, `behaviour/schedule.py` | `setAvailable` when an agent goes off / on shift or needs / finishes a recharge; recharge task goes through `createTask` (retry with cooldown if broke); `requeue` goes through `unassignTask` |
+| `economy/economy.py` | `transfer_reward` removed; becomes `settle_task()` → TaskManager `completeTask` / `failTask` |
+| `world/metrics.py` | new reporters: escrow locked, rejected tasks, waiting tasks, stranded robots, tx count, gas |
 | `scripts/run_experiment.py` | also writes `transactions.csv`, `events.csv` |
 | `requirements.txt`, `Dockerfile` | `web3`, `py-solc-x`; Node.js + `ganache` + `@openzeppelin/contracts` in the image |
-| `config.yaml`, `config/load_config.py` | new `blockchain:` section |
+| `config.yaml`, `config/load_config.py` | new `blockchain:` section; a price per agent service |
