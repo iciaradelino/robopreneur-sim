@@ -18,6 +18,9 @@ from chain.config import DEPLOYMENTS_PATH
 from chain.log import short
 
 
+GAS_HEADROOM = 1.5  # gas limit = estimate x this
+
+
 class TxReverted(Exception):
     """The transaction was rejected (a contract rule or the node); nothing changed on-chain."""
 
@@ -143,7 +146,11 @@ class ChainClient:
         try:
             # gas estimation runs the call first, so a broken rule is caught before sending
             with self.tx_lock:
-                receipt = self._sign_and_send(fn.build_transaction(self._tx_base()))
+                tx = fn.build_transaction(self._tx_base())
+                # headroom: calls into the Organization contract nest several levels deep, and
+                # the 63/64 gas rule makes the estimate too tight for them (out-of-gas revert)
+                tx["gas"] = int(tx["gas"] * GAS_HEADROOM)
+                receipt = self._sign_and_send(tx)
         except (ContractLogicError, Web3RPCError, TxReverted) as e:
             reason = e.reason if isinstance(e, TxReverted) else revert_reason(e)
             self.log("revert", f"✗ {call} → {reason}")

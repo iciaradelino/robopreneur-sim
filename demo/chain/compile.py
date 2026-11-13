@@ -4,7 +4,7 @@ import solcx
 
 from chain.config import DEMO_DIR
 
-CONTRACT_NAMES = ["IECToken", "AgentRegistry", "ServiceRegistry", "TaskEscrow"]
+CONTRACT_NAMES = ["IECToken", "AgentRegistry", "ServiceRegistry", "TaskManager", "Organization"]
 
 
 def compile_contracts(solc_version, evm_version):
@@ -22,6 +22,6 @@ def compile_contracts(solc_version, evm_version):
         import_remappings={"@openzeppelin/": "node_modules/@openzeppelin/"},
         base_path=str(DEMO_DIR),
     )
-    # keys look like "<path>/TaskEscrow.sol:TaskEscrow"; keep only our 4 contracts
+    # keys look like "<path>/TaskManager.sol:TaskManager"; keep only our contracts
     return {key.rsplit(":", 1)[-1]: {"abi": a["abi"], "bytecode": a["bin"]}
             for key, a in output.items() if key.rsplit(":", 1)[-1] in CONTRACT_NAMES}

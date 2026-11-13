@@ -48,13 +48,15 @@ class Node:
     # ── commands every terminal has ────────────────────────────────────
 
     def cmd_tasks(self):
-        """list every task in the escrow"""
-        count = self.client.call("TaskEscrow", "taskCount")
+        """list every task in the on-chain registry"""
+        count = self.client.call("TaskManager", "taskCount")
+        waiting = set(self.client.call("Organization", "getWaitingTasks"))
         rows = []
         for task_id in range(1, count + 1):
-            assigner, assignee, service, reward, status, *_ = self.client.call("TaskEscrow", "getTask", task_id)
-            worker = self.book.name(assignee) if assignee != NO_ADDRESS else "-"
-            rows.append(f"#{task_id:<3} {STATUS[status]:<10} {service:<19} {iec(reward):>12}"
+            assigner, assignee, service, _, reward, price, status, *_ = self.client.call("TaskManager", "getTask", task_id)
+            worker = f"{self.book.name(assignee)} at {iec(price)}" if assignee != NO_ADDRESS else "-"
+            state = "waiting" if task_id in waiting else STATUS[status]
+            rows.append(f"#{task_id:<3} {state:<10} {service:<19} {iec(reward):>12}"
                         f"  {self.book.name(assigner)} → {worker}")
         self.log("task", "tasks\n" + "\n".join(rows) if rows else "no tasks yet")
 
@@ -64,18 +66,22 @@ class Node:
         supply = c.call("IECToken", "totalSupply")
         total = 0
         lines = []
-        for name in ["master", *self.cfg["agents"], "escrow"]:
+        for name in ["master", *self.cfg["agents"], "taskmanager"]:
             address = self.book.addresses[name]
             balance = c.iec_balance(address)
             total += balance
-            lines.append(f"{name:<9} {iec(balance):>16}  {c.eth_balance(address):>7.2f} ETH")
+            lines.append(f"{name:<11} {iec(balance):>16}  {c.eth_balance(address):>7.2f} ETH")
         ok ="✓ conserved" if total == supply else f"✗ supply is {iec(supply)}"
-        self.log("status", "balances\n" + "\n".join(lines) + f"\n{'total':<9} {iec(total):>16}  {ok}")
+        self.log("status", "balances\n" + "\n".join(lines) + f"\n{'total':<11} {iec(total):>16}  {ok}")
 
     def cmd_providers(self, service):
-        """who offers a service"""
-        providers = self.client.call("ServiceRegistry", "getProviders", service)
-        self.log("status", f"{service}: {', '.join(map(self.book.name, providers)) or 'nobody'}")
+        """who offers a service, at what price, and who is busy"""
+        c = self.client
+        offers = []
+        for p in c.call("ServiceRegistry", "getProviders", service):
+            busy = " (busy)" if c.call("ServiceRegistry", "busy", p) else ""
+            offers.append(f"{self.book.name(p)} {iec(c.call('ServiceRegistry', 'priceOf', p, service))}{busy}")
+        self.log("status", f"{service}: {', '.join(offers) or 'nobody'}")
 
     # ── prompt ─────────────────────────────────────────────────────────
 

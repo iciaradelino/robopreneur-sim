@@ -13,23 +13,26 @@ chain:
 token:
   total_supply: 100000        # IEC, all minted to the master by `deploy`
 
-agents:                       # initial_wealth: IEC that `register` sends (and `fund` by default)
+# initial_wealth: IEC that `register` sends (and `fund` by default)
+# services: what the agent offers and its price (IEC). The Organization contract gives each new
+# task to the cheapest idle provider whose price <= the task's reward; the poster gets the rest back.
+agents:
   robot_1:
     kind: robot
     initial_wealth: 2000
-    services: [LabCleaning, ItemTransport, SurveillancePatrol]
+    services: {LabCleaning: 110, ItemTransport: 110, SurveillancePatrol: 150}
   robot_2:
     kind: robot
     initial_wealth: 300
-    services: [LabCleaning, ComponentRestock]
+    services: {LabCleaning: 95, ComponentRestock: 100}
   human_1:
     kind: human
     initial_wealth: 2000
-    services: [BatteryCharging, LabCleaning, SystemUpdate]
+    services: {BatteryCharging: 100, LabCleaning: 125, SystemUpdate: 110}
   human_2:
     kind: human
     initial_wealth: 2000
-    services: [BatteryCharging, PowerSupply, FunctionalityTest]
+    services: {BatteryCharging: 110, PowerSupply: 100, FunctionalityTest: 115}
 
 auto:                         # `start`: the market runs on its own, like the simulator
   step_s: 0.25                # real seconds per simulated minute

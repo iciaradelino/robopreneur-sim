@@ -1,18 +1,16 @@
-"""Master node terminal: deploys the contracts, registers the agents and assigns tasks.
+"""Master node terminal: deploys the contracts and registers the agents.
 
-The master is the operator: after `deploy` it holds the whole IEC supply, and it is the
-only wallet allowed to assign and requeue tasks. `register` gives every agent its wallet
-(derived from the seed) and sets it up for the market. `start` does both if needed and
-then runs the market on its own (see chain/auto.py): the master assigns open tasks FIFO,
-each to a random idle provider, like the simulator. Without `start` nothing happens until
-you type a command; events from the agents' terminals are logged as they arrive.
+The master owns the Organization contract: after `deploy` it holds the whole IEC supply.
+It does not pick assignees: every task registered in TaskManager is assigned on-chain by
+the Organization contract in the same transaction (see contracts/Organization.sol), and
+the master only watches the events. Its one say over assignment is `requeue`, which asks
+the Organization to take a task back and give it to someone else. `register` gives every
+agent its wallet (derived from the seed) and sets it up for the market. `start` does both
+if needed and then lets tasks arrive on their own (see chain/auto.py).
 """
-
-import threading
 
 from eth_account import Account
 
-from chain.client import TxReverted
 from chain.compile import compile_contracts
 from chain import auto
 from chain.config import AUTO_PATH, DEPLOYMENTS_PATH, load_config
@@ -28,17 +26,12 @@ class Master(Node):
         super().__init__(cfg, "master", Account.from_key(cfg["chain"]["master_key"]))
         self.book.add(self.address, "master")
         self.log.banner(f"MASTER · {self.address}")
-        # what the FIFO assigner knows, kept up to date from the escrow's events
-        self.queue = []  # open tasks, oldest first: (task id, service, assigner)
-        self.busy = set()  # agents working on a task (assigned, not delivered yet)
         self.running = False
-        self.rng = auto.rng(cfg, "master")
-        self.lock = threading.Lock()  # the prompt and the event thread both assign
 
     # ── commands ───────────────────────────────────────────────────────
 
     def cmd_deploy(self):
-        """compile and deploy the 4 contracts; the master gets the whole IEC supply"""
+        """compile and deploy the 5 contracts and wire the Organization; the master gets the whole IEC supply"""
         if self.client.contracts:
             raise ValueError("already deployed - restart Ganache for a fresh chain")
         DEPLOYMENTS_PATH.unlink(missing_ok=True)
@@ -51,24 +44,33 @@ class Master(Node):
         c.deploy("IECToken", compiled["IECToken"], self.cfg["token"]["total_supply"] * 100, self.address)
         c.deploy("AgentRegistry", compiled["AgentRegistry"])
         c.deploy("ServiceRegistry", compiled["ServiceRegistry"], c.contracts["AgentRegistry"].address)
-        c.deploy("TaskEscrow", compiled["TaskEscrow"], c.contracts["IECToken"].address,
-                 c.contracts["AgentRegistry"].address, c.contracts["ServiceRegistry"].address, self.address)
-        self.book.add(c.contracts["TaskEscrow"].address, "escrow")
+        c.deploy("TaskManager", compiled["TaskManager"], c.contracts["IECToken"].address,
+                 c.contracts["AgentRegistry"].address, c.contracts["ServiceRegistry"].address)
+        c.deploy("Organization", compiled["Organization"])
+        # the Organization and the two contracts it drives need each other's address
+        org = c.contracts["Organization"].address
+        c.send_tx("Organization", "setTaskManager", c.contracts["TaskManager"].address)
+        c.send_tx("Organization", "setServiceRegistry", c.contracts["ServiceRegistry"].address)
+        c.send_tx("TaskManager", "setOrganization", org)
+        c.send_tx("ServiceRegistry", "setOrganization", org)
+        self.book.add(c.contracts["TaskManager"].address, "taskmanager")
+        self.book.add(org, "organization")
         c.save_deployments()
         self.log("deploy", f"master holds {iec(c.iec_balance(self.address))} · next: register")
 
-        c.subscribe("TaskEscrow", "TaskCreated", self.on_task_created)
-        c.subscribe("TaskEscrow", "TaskAssigned", self.on_task_assigned)
-        c.subscribe("TaskEscrow", "TaskRequeued", self.on_task_requeued)
-        c.subscribe("TaskEscrow", "TaskDelivered", self.on_task_delivered)
-        c.subscribe("TaskEscrow", "TaskCompleted", self.on_task_completed)
-        c.subscribe("TaskEscrow", "TaskCancelled", self.on_task_cancelled)
+        c.subscribe("TaskManager", "TaskCreated", self.on_task_created)
+        c.subscribe("TaskManager", "TaskAssigned", self.on_task_assigned)
+        c.subscribe("Organization", "TaskQueued", self.on_task_queued)
+        c.subscribe("TaskManager", "TaskRequeued", self.on_task_requeued)
+        c.subscribe("TaskManager", "TaskDelivered", self.on_task_delivered)
+        c.subscribe("TaskManager", "TaskCompleted", self.on_task_completed)
+        c.subscribe("TaskManager", "TaskCancelled", self.on_task_cancelled)
         c.listen()
 
     def cmd_register(self):
-        """give every agent its wallet, gas ETH and initial_wealth; register it, approve the escrow, list its services"""
+        """give every agent its wallet, gas ETH and initial_wealth; register it, approve the TaskManager, list its services and prices"""
         c = self.client
-        escrow = c.contract("TaskEscrow").address
+        task_manager = c.contract("TaskManager").address
         todo = self.unregistered()
         if not todo:
             raise ValueError("every agent is registered already")
@@ -80,14 +82,16 @@ class Master(Node):
             c.send_eth(account.address, self.cfg["chain"]["gas_eth_per_agent"])
             wallet.send_tx("AgentRegistry", "registerAgent", name, KINDS.index(agent["kind"]))
             c.send_tx("IECToken", "transfer", account.address, agent["initial_wealth"] * 100)
-            wallet.send_tx("IECToken", "approve", escrow, 2**256 - 1)
-            for service in agent["services"]:
-                wallet.send_tx("ServiceRegistry", "registerService", service, self.cfg["services"][service]["category"])
+            wallet.send_tx("IECToken", "approve", task_manager, 2**256 - 1)
+            for service, price in agent["services"].items():
+                wallet.send_tx("ServiceRegistry", "registerService", service,
+                               self.cfg["services"][service]["category"], price * 100)
+            offers = ", ".join(f"{s} {iec(p * 100)}" for s, p in agent["services"].items())
             self.log("paid", f"{name} registered as {agent['kind']} · {account.address} · {iec(c.iec_balance(account.address))}"
-                             f"\noffers {', '.join(agent['services'])}")
+                             f"\noffers {offers}")
 
     def cmd_start(self):
-        """run the market on its own: deploy and register if needed, then tasks arrive, get assigned and finish"""
+        """run the market on its own: deploy and register if needed, then tasks arrive and finish on their own"""
         if not self.client.contracts:
             self.cmd_deploy()
         if self.unregistered():
@@ -98,16 +102,16 @@ class Master(Node):
         self.running = True
         auto.set_running(True)
         self.log("init", f"market running · 1 min = {a['step_s']} s · ~{a['arrival_rate']} tasks/h"
-                         f" · open tasks go FIFO to a random idle provider · `stop` pauses")
-        self.assign_open()
+                         f" · the Organization contract assigns each task as it is registered · `stop` pauses")
 
     def cmd_stop(self):
-        """pause: no new tasks or assignments; work in progress still finishes"""
+        """pause: no new tasks arrive; work in progress (and assignment of waiting tasks) goes on"""
         if not self.running:
             raise ValueError("not running - `start` runs the market")
         self.running = False
         auto.set_running(False)
-        self.log("init", f"market paused · {len(self.queue)} open task(s) wait · `start` resumes")
+        waiting = len(self.client.call("Organization", "getWaitingTasks"))
+        self.log("init", f"market paused · {waiting} task(s) waiting for a provider · `start` resumes")
 
     def cmd_fund(self, agent, amount=None):
         """top up an agent or `all` with IEC (default: its initial_wealth)"""
@@ -120,81 +124,46 @@ class Master(Node):
             self.client.send_tx("IECToken", "transfer", address, units)
             self.log("paid", f"{name} received {iec(units)}")
 
-    def cmd_assign(self, task_id, agent):
-        """give an open task to an agent that offers its service"""
-        self.client.send_tx("TaskEscrow", "assignTask", number(task_id, "task id"), self.agent_address(agent))
-
     def cmd_requeue(self, task_id):
-        """take an assigned task back; it is open again and its reward stays locked"""
-        self.client.send_tx("TaskEscrow", "requeueTask", number(task_id, "task id"))
+        """take a task back from its provider; the Organization gives it to another one (or queues it)"""
+        self.client.send_tx("Organization", "unassignTask", number(task_id, "task id"))
 
     def unregistered(self):
         return [name for name in self.cfg["agents"]
                 if not self.client.call("AgentRegistry", "isRegistered", self.book.addresses[name])]
 
-    def assign_open(self):
-        """FIFO: walk the open tasks oldest first, give each to a random idle provider (not its poster)."""
-        with self.lock:
-            if not self.running:
-                return
-            for task in list(self.queue):
-                task_id, service, assigner = task
-                idle = [p for p in self.client.call("ServiceRegistry", "getProviders", service)
-                        if p != assigner and p not in self.busy]
-                if not idle:
-                    continue  # stays at its place in the queue until a provider is free
-                assignee = self.rng.choice(idle)
-                try:
-                    self.client.send_tx("TaskEscrow", "assignTask", task_id, assignee)
-                except TxReverted:
-                    continue  # e.g. cancelled meanwhile: its event takes it off the queue
-                self.queue.remove(task)
-                self.busy.add(assignee)
-
     # ── events ─────────────────────────────────────────────────────────
 
     def on_task_created(self, e):
         a = e.args
-        with self.lock:
-            self.queue.append((a.taskId, a.service, a.assigner))
-        providers = [self.book.name(p) for p in self.client.call("ServiceRegistry", "getProviders", a.service)
-                     if p != a.assigner]
-        hint = f" → assign {a.taskId} {providers[0]}" if providers and not self.running else ""
-        self.log("event", f"task #{a.taskId} · {self.book.name(a.assigner)} needs {a.service} · {iec(a.reward)} locked\n"
-                          f"providers: {', '.join(providers) or 'nobody yet'}{hint}")
-        self.assign_open()
+        self.log("event", f"task #{a.taskId} registered · {self.book.name(a.assigner)} needs {a.service}"
+                          f" ({a.category}) · {iec(a.reward)} locked")
 
     def on_task_assigned(self, e):
         a = e.args
-        with self.lock:  # also covers a manual `assign`
-            self.queue = [t for t in self.queue if t[0] != a.taskId]
-            self.busy.add(a.assignee)
-        self.log("event", f"task #{a.taskId} {a.service} → {self.book.name(a.assignee)}")
+        self.log("event", f"task #{a.taskId} {a.service} → {self.book.name(a.assignee)} at {iec(a.price)}"
+                          f" (assigned on-chain by the Organization)")
+
+    def on_task_queued(self, e):
+        a = e.args
+        self.log("warn", f"task #{a.taskId} {a.service} · {iec(a.reward)} · no idle provider at that price"
+                         f" · waits in the Organization's queue")
 
     def on_task_requeued(self, e):
-        a = e.args
-        assigner, _, service, *_ = self.client.call("TaskEscrow", "getTask", a.taskId)
-        with self.lock:
-            self.busy.discard(a.previousAssignee)
-            self.queue.append((a.taskId, service, assigner))  # back of the queue, as in the simulator
-        self.assign_open()
+        self.log("event", f"task #{e.args.taskId} taken back from {self.book.name(e.args.previousAssignee)}")
 
     def on_task_delivered(self, e):
         a = e.args
-        with self.lock:
-            self.busy.discard(a.assignee)
         self.log("event", f"task #{a.taskId} delivered by {self.book.name(a.assignee)}"
                           f" · waiting for {self.book.name(a.assigner)} to confirm")
-        self.assign_open()
 
     def on_task_completed(self, e):
         a = e.args
-        self.log("paid", f"task #{a.taskId} completed · {self.book.name(a.assignee)} paid {iec(a.reward)}"
-                         f" by {self.book.name(a.assigner)}")
+        refund = f" · {iec(a.refunded)} back to {self.book.name(a.assigner)}" if a.refunded else ""
+        self.log("paid", f"task #{a.taskId} completed · {self.book.name(a.assignee)} paid {iec(a.paid)}"
+                         f" by {self.book.name(a.assigner)}{refund}")
 
     def on_task_cancelled(self, e):
-        with self.lock:
-            self.queue = [t for t in self.queue if t[0] != e.args.taskId]
         self.log("refund", f"task #{e.args.taskId} cancelled · {iec(e.args.refunded)} back to"
                            f" {self.book.name(e.args.assigner)}")
 
